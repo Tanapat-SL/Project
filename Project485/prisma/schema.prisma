@@ -7,86 +7,272 @@ datasource db {
   url      = env("DATABASE_URL")
 }
 
-model User {
-  id          Int      @id @default(autoincrement())
-  username    String   @unique
-  email       String   @unique
-  password    String
-  avatarUrl   String?
-  discordId   String?  @unique
-  
-  // Gaming Profile
-  game        String?  
-  rank        String?  
-  playStyle   String?  // e.g., Casual, Tryhard, Flex
-  voiceChat   Boolean  @default(true)
-  bio         String?
-  
-  createdAt   DateTime @default(now())
-  updatedAt   DateTime @updatedAt
+// ─────────────────────────────────────────────
+// Enums
+// ─────────────────────────────────────────────
 
-  // Relationships
-  sentMessages     Message[]       @relation("SentMessages")
-  receivedMessages Message[]       @relation("ReceivedMessages")
-  sentRequests     FriendRequest[] @relation("SentRequests")
-  receivedRequests FriendRequest[] @relation("ReceivedRequests")
-  
-  // Party System
-  partiesOwned     Party[]         @relation("PartyOwner")
-  partyMemberships PartyMember[]
+enum Platform {
+  PC
+  PLAYSTATION
+  XBOX
+  SWITCH
+  MOBILE
 }
+
+enum PlayStyle {
+  COMPETITIVE
+  CASUAL
+  CHILL
+  LEARNING
+}
+
+enum GameMode {
+  RANKED
+  CASUAL
+  COOP
+  CUSTOM
+}
+
+enum PartyStatus {
+  OPEN
+  FULL
+  CLOSED
+}
+
+enum PartyRole {
+  OWNER
+  MEMBER
+}
+
+enum MemberStatus {
+  PENDING
+  ACCEPTED
+  REJECTED
+  LEFT
+  KICKED
+}
+
+enum ConversationType {
+  PARTY
+  DIRECT
+}
+
+enum NotificationType {
+  PARTY_JOIN_REQUEST
+  PARTY_REQUEST_ACCEPTED
+  PARTY_REQUEST_REJECTED
+  NEW_MESSAGE
+}
+
+enum ReportStatus {
+  OPEN
+  REVIEWED
+  DISMISSED
+}
+
+// ─────────────────────────────────────────────
+// Users & Games
+// ─────────────────────────────────────────────
+
+/// บัญชีผู้ใช้ — ล็อกอินผ่าน Discord OAuth เท่านั้น จึงไม่มีฟิลด์รหัสผ่าน
+model User {
+  id        Int      @id @default(autoincrement())
+  discordId String   @unique
+  username  String
+  email     String?  @unique
+  avatarUrl String?
+  bio       String?  @db.VarChar(500)
+  languages String[] @default([])
+  timezone  String   @default("Asia/Bangkok")
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  games              UserGame[]
+  availability       Availability[]
+  partiesOwned       Party[]              @relation("PartyOwner")
+  partyMemberships   PartyMember[]
+  conversations      ConversationMember[]
+  messages           Message[]
+  notifications      Notification[]
+  blocking           UserBlock[]          @relation("Blocker")
+  blockedBy          UserBlock[]          @relation("Blocked")
+  reportsMade        Report[]             @relation("Reporter")
+  reportsReceived    Report[]             @relation("ReportTarget")
+}
+
+model Game {
+  id       Int     @id @default(autoincrement())
+  name     String  @unique
+  slug     String  @unique
+  imageUrl String?
+  /// ลำดับแรงก์จากต่ำไปสูง ใช้เทียบระดับฝีมือ (ว่างได้ถ้าเกมไม่มีแรงก์)
+  ranks    String[] @default([])
+
+  players UserGame[]
+  parties Party[]
+}
+
+/// เกมที่ผู้ใช้เล่น (User M:N Game)
+model UserGame {
+  id         Int        @id @default(autoincrement())
+  userId     Int
+  gameId     Int
+  rank       String?
+  platform   Platform   @default(PC)
+  playStyle  PlayStyle  @default(CASUAL)
+  micEnabled Boolean    @default(true)
+
+  user User @relation(fields: [userId], references: [id], onDelete: Cascade)
+  game Game @relation(fields: [gameId], references: [id], onDelete: Cascade)
+
+  @@unique([userId, gameId])
+  @@index([gameId])
+}
+
+/// ช่วงเวลาที่สะดวกเล่น (dayOfWeek: 0 = อาทิตย์ … 6 = เสาร์, เวลาเป็น "HH:mm" ตาม timezone ของผู้ใช้)
+model Availability {
+  id        Int    @id @default(autoincrement())
+  userId    Int
+  dayOfWeek Int
+  startTime String
+  endTime   String
+
+  user User @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@index([userId])
+}
+
+// ─────────────────────────────────────────────
+// Parties
+// ─────────────────────────────────────────────
 
 model Party {
-  id          Int      @id @default(autoincrement())
-  title       String
-  game        String
-  rankReq     String?  // e.g., "Immortal+", "Gold-Plat"
-  maxPlayers  Int      @default(5)
-  status      String   @default("OPEN") // OPEN, FULL, IN_GAME, CLOSED
-  
+  id          Int         @id @default(autoincrement())
   ownerId     Int
-  owner       User     @relation("PartyOwner", fields: [ownerId], references: [id])
-  
-  members     PartyMember[]
-  createdAt   DateTime @default(now())
-  updatedAt   DateTime @updatedAt
+  gameId      Int
+  title       String      @db.VarChar(100)
+  description String?     @db.VarChar(1000)
+  mode        GameMode    @default(CASUAL)
+  rankMin     String?
+  rankMax     String?
+  maxMembers  Int         @default(5)
+  micRequired Boolean     @default(false)
+  language    String?
+  status      PartyStatus @default(OPEN)
+  createdAt   DateTime    @default(now())
+  updatedAt   DateTime    @updatedAt
+
+  owner        User          @relation("PartyOwner", fields: [ownerId], references: [id], onDelete: Cascade)
+  game         Game          @relation(fields: [gameId], references: [id])
+  members      PartyMember[]
+  conversation Conversation?
+
+  @@index([gameId])
+  @@index([status])
+  @@index([createdAt])
+  @@index([ownerId])
 }
 
+/// สมาชิกปาร์ตี้และคำขอเข้าร่วม (Party M:N User)
 model PartyMember {
-  id          Int      @id @default(autoincrement())
-  partyId     Int
-  userId      Int
-  status      String   @default("PENDING") // PENDING, ACCEPTED, KICKED
-  
-  party       Party    @relation(fields: [partyId], references: [id])
-  user        User     @relation(fields: [userId], references: [id])
-  joinedAt    DateTime @default(now())
+  id       Int          @id @default(autoincrement())
+  partyId  Int
+  userId   Int
+  role     PartyRole    @default(MEMBER)
+  status   MemberStatus @default(PENDING)
+  message  String?      @db.VarChar(300)
+  joinedAt DateTime     @default(now())
+  updatedAt DateTime    @updatedAt
 
-  @@unique([partyId, userId]) // Prevent double joining
+  party Party @relation(fields: [partyId], references: [id], onDelete: Cascade)
+  user  User  @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@unique([partyId, userId])
+  @@index([userId])
+  @@index([partyId, status])
+}
+
+// ─────────────────────────────────────────────
+// Chat
+// ─────────────────────────────────────────────
+
+/// ห้องแชท — ห้องของปาร์ตี้ (สิทธิ์อิงจากสมาชิกปาร์ตี้ที่ ACCEPTED) หรือแชทส่วนตัว (อิงจาก ConversationMember)
+model Conversation {
+  id        Int              @id @default(autoincrement())
+  type      ConversationType
+  partyId   Int?             @unique
+  createdAt DateTime         @default(now())
+
+  party    Party?               @relation(fields: [partyId], references: [id], onDelete: Cascade)
+  members  ConversationMember[]
+  messages Message[]
+}
+
+model ConversationMember {
+  conversationId Int
+  userId         Int
+  lastReadAt     DateTime?
+
+  conversation Conversation @relation(fields: [conversationId], references: [id], onDelete: Cascade)
+  user         User         @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@id([conversationId, userId])
+  @@index([userId])
 }
 
 model Message {
-  id         Int      @id @default(autoincrement())
-  content    String
-  
-  // If it's a direct message
-  senderId   Int
-  receiverId Int?
-  sender     User     @relation("SentMessages", fields: [senderId], references: [id])
-  receiver   User?    @relation("ReceivedMessages", fields: [receiverId], references: [id])
-  
-  // If it's a party message (optional expansion)
-  partyId    Int?
-  
-  createdAt  DateTime @default(now())
+  id             Int      @id @default(autoincrement())
+  conversationId Int
+  senderId       Int
+  content        String   @db.VarChar(2000)
+  createdAt      DateTime @default(now())
+
+  conversation Conversation @relation(fields: [conversationId], references: [id], onDelete: Cascade)
+  sender       User         @relation(fields: [senderId], references: [id], onDelete: Cascade)
+
+  @@index([conversationId, createdAt])
 }
 
-model FriendRequest {
-  id         Int      @id @default(autoincrement())
-  senderId   Int
-  receiverId Int
-  status     String   @default("PENDING") // PENDING, ACCEPTED, REJECTED
-  sender     User     @relation("SentRequests", fields: [senderId], references: [id])
-  receiver   User     @relation("ReceivedRequests", fields: [receiverId], references: [id])
-  createdAt  DateTime @default(now())
+// ─────────────────────────────────────────────
+// Notifications & Safety
+// ─────────────────────────────────────────────
+
+model Notification {
+  id        Int              @id @default(autoincrement())
+  userId    Int
+  type      NotificationType
+  payload   Json
+  readAt    DateTime?
+  createdAt DateTime         @default(now())
+
+  user User @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@index([userId, readAt])
+}
+
+model UserBlock {
+  blockerId Int
+  blockedId Int
+  createdAt DateTime @default(now())
+
+  blocker User @relation("Blocker", fields: [blockerId], references: [id], onDelete: Cascade)
+  blocked User @relation("Blocked", fields: [blockedId], references: [id], onDelete: Cascade)
+
+  @@id([blockerId, blockedId])
+  @@index([blockedId])
+}
+
+model Report {
+  id           Int          @id @default(autoincrement())
+  reporterId   Int
+  targetUserId Int
+  reason       String       @db.VarChar(1000)
+  status       ReportStatus @default(OPEN)
+  createdAt    DateTime     @default(now())
+
+  reporter   User @relation("Reporter", fields: [reporterId], references: [id], onDelete: Cascade)
+  targetUser User @relation("ReportTarget", fields: [targetUserId], references: [id], onDelete: Cascade)
+
+  @@index([status])
+  @@index([targetUserId])
 }
