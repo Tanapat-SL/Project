@@ -1,6 +1,10 @@
 import { Request, Response, NextFunction } from 'express';
 
 export const logger = (req: Request, res: Response, next: NextFunction) => {
-  console.log(`${req.method} ${req.url}`);
+  const start = Date.now();
+  res.on('finish', () => {
+    // บันทึกเฉพาะ path (ไม่รวม query string) เพื่อไม่ให้ code/state ของ OAuth ลง Log
+    console.log(`${req.method} ${req.path} ${res.statusCode} ${Date.now() - start}ms`);
+  });
   next();
 };
