@@ -1,0 +1,92 @@
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "postgresql"
+  url      = env("DATABASE_URL")
+}
+
+model User {
+  id          Int      @id @default(autoincrement())
+  username    String   @unique
+  email       String   @unique
+  password    String
+  avatarUrl   String?
+  discordId   String?  @unique
+  
+  // Gaming Profile
+  game        String?  
+  rank        String?  
+  playStyle   String?  // e.g., Casual, Tryhard, Flex
+  voiceChat   Boolean  @default(true)
+  bio         String?
+  
+  createdAt   DateTime @default(now())
+  updatedAt   DateTime @updatedAt
+
+  // Relationships
+  sentMessages     Message[]       @relation("SentMessages")
+  receivedMessages Message[]       @relation("ReceivedMessages")
+  sentRequests     FriendRequest[] @relation("SentRequests")
+  receivedRequests FriendRequest[] @relation("ReceivedRequests")
+  
+  // Party System
+  partiesOwned     Party[]         @relation("PartyOwner")
+  partyMemberships PartyMember[]
+}
+
+model Party {
+  id          Int      @id @default(autoincrement())
+  title       String
+  game        String
+  rankReq     String?  // e.g., "Immortal+", "Gold-Plat"
+  maxPlayers  Int      @default(5)
+  status      String   @default("OPEN") // OPEN, FULL, IN_GAME, CLOSED
+  
+  ownerId     Int
+  owner       User     @relation("PartyOwner", fields: [ownerId], references: [id])
+  
+  members     PartyMember[]
+  createdAt   DateTime @default(now())
+  updatedAt   DateTime @updatedAt
+}
+
+model PartyMember {
+  id          Int      @id @default(autoincrement())
+  partyId     Int
+  userId      Int
+  status      String   @default("PENDING") // PENDING, ACCEPTED, KICKED
+  
+  party       Party    @relation(fields: [partyId], references: [id])
+  user        User     @relation(fields: [userId], references: [id])
+  joinedAt    DateTime @default(now())
+
+  @@unique([partyId, userId]) // Prevent double joining
+}
+
+model Message {
+  id         Int      @id @default(autoincrement())
+  content    String
+  
+  // If it's a direct message
+  senderId   Int
+  receiverId Int?
+  sender     User     @relation("SentMessages", fields: [senderId], references: [id])
+  receiver   User?    @relation("ReceivedMessages", fields: [receiverId], references: [id])
+  
+  // If it's a party message (optional expansion)
+  partyId    Int?
+  
+  createdAt  DateTime @default(now())
+}
+
+model FriendRequest {
+  id         Int      @id @default(autoincrement())
+  senderId   Int
+  receiverId Int
+  status     String   @default("PENDING") // PENDING, ACCEPTED, REJECTED
+  sender     User     @relation("SentRequests", fields: [senderId], references: [id])
+  receiver   User     @relation("ReceivedRequests", fields: [receiverId], references: [id])
+  createdAt  DateTime @default(now())
+}
