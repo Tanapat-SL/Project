@@ -16,6 +16,8 @@ const io = new Server(httpServer, {
   }
 });
 
+app.set('io', io);
+
 io.on('connection', (socket) => {
   console.log('A user connected:', socket.id);
 
@@ -35,6 +37,11 @@ io.on('connection', (socket) => {
   socket.on('send_dm', (data) => {
     // data: { receiverId, content, senderId, senderName }
     io.to(`user_${data.receiverId}`).emit('receive_dm', data);
+  });
+
+  socket.on('send_direct_message', (data) => {
+    io.to(`user_${data.receiverId}`).emit('receive_direct_message', data);
+    io.to(`user_${data.senderId}`).emit('receive_direct_message', data);
   });
 
   // Send Party Message

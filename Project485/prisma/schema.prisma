@@ -62,6 +62,15 @@ enum NotificationType {
   PARTY_REQUEST_ACCEPTED
   PARTY_REQUEST_REJECTED
   NEW_MESSAGE
+  PARTY_INVITE
+  FRIEND_REQUEST
+  FRIEND_REQUEST_ACCEPTED
+}
+
+enum FriendRequestStatus {
+  PENDING
+  ACCEPTED
+  REJECTED
 }
 
 enum ReportStatus {
@@ -79,11 +88,13 @@ model User {
   id        Int      @id @default(autoincrement())
   discordId String   @unique
   username  String
+  displayName String?
   email     String?  @unique
   avatarUrl String?
   bio       String?  @db.VarChar(500)
   languages String[] @default([])
   timezone  String   @default("Asia/Bangkok")
+  contact   String?
   createdAt DateTime @default(now())
   updatedAt DateTime @updatedAt
 
@@ -98,6 +109,8 @@ model User {
   blockedBy          UserBlock[]          @relation("Blocked")
   reportsMade        Report[]             @relation("Reporter")
   reportsReceived    Report[]             @relation("ReportTarget")
+  friendRequestsSent     FriendRequest[] @relation("FriendRequester")
+  friendRequestsReceived FriendRequest[] @relation("FriendReceiver")
 }
 
 model Game {
@@ -158,6 +171,7 @@ model Party {
   maxMembers  Int         @default(5)
   micRequired Boolean     @default(false)
   language    String?
+  region      String?
   status      PartyStatus @default(OPEN)
   createdAt   DateTime    @default(now())
   updatedAt   DateTime    @updatedAt
@@ -248,6 +262,21 @@ model Notification {
   user User @relation(fields: [userId], references: [id], onDelete: Cascade)
 
   @@index([userId, readAt])
+}
+
+model FriendRequest {
+  id          Int                 @id @default(autoincrement())
+  requesterId Int
+  receiverId  Int
+  status      FriendRequestStatus @default(PENDING)
+  createdAt   DateTime            @default(now())
+  updatedAt   DateTime            @updatedAt
+
+  requester User @relation("FriendRequester", fields: [requesterId], references: [id], onDelete: Cascade)
+  receiver  User @relation("FriendReceiver", fields: [receiverId], references: [id], onDelete: Cascade)
+
+  @@unique([requesterId, receiverId])
+  @@index([receiverId, status])
 }
 
 model UserBlock {

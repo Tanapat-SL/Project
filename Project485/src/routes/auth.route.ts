@@ -6,7 +6,7 @@ import { authenticate } from '../middlewares/auth.middleware';
 
 const router = Router();
 
-// 1. ส่งผู้ใช้ไปหน้าล็อกอิน Discord
+// 1. เธชเนเธเธเธนเนเนเธเนเนเธเธซเธเนเธฒเธฅเนเธญเธเธญเธดเธ Discord
 router.get('/discord', (req, res) => {
   const clientId = process.env.DISCORD_CLIENT_ID;
   const redirectUri = encodeURIComponent(process.env.DISCORD_REDIRECT_URI as string);
@@ -15,7 +15,7 @@ router.get('/discord', (req, res) => {
   res.redirect(discordLoginUrl);
 });
 
-// 2. รับข้อมูลกลับจาก Discord
+// 2. เธฃเธฑเธเธเนเธญเธกเธนเธฅเธเธฅเธฑเธเธเธฒเธ Discord
 router.get('/discord/callback', async (req, res) => {
   const { code } = req.query;
 
@@ -28,14 +28,14 @@ router.get('/discord/callback', async (req, res) => {
       redirect_uri: process.env.DISCORD_REDIRECT_URI as string,
     });
 
-    // แลก Token จาก Discord
+    // เนเธฅเธ Token เธเธฒเธ Discord
     const tokenResponse = await axios.post('https://discord.com/api/oauth2/token', params.toString(), {
       headers: { 'Content-Type': 'application/x-www-form-urlencoded' },
     });
 
     const { access_token } = tokenResponse.data;
 
-    // ดึงข้อมูลโปรไฟล์ผู้ใช้
+    // เธ”เธถเธเธเนเธญเธกเธนเธฅเนเธเธฃเนเธเธฅเนเธเธนเนเนเธเน
     const userResponse = await axios.get('https://discord.com/api/users/@me', {
       headers: { Authorization: `Bearer ${access_token}` },
     });
@@ -45,7 +45,7 @@ router.get('/discord/callback', async (req, res) => {
         ? `https://cdn.discordapp.com/avatars/${discordUser.id}/${discordUser.avatar}.png`
         : `https://cdn.discordapp.com/embed/avatars/0.png`; // Default Discord avatar
 
-    // บันทึกหรืออัปเดตผู้ใช้ใน Database
+    // เธเธฑเธเธ—เธถเธเธซเธฃเธทเธญเธญเธฑเธเน€เธ”เธ•เธเธนเนเนเธเนเนเธ Database
     let user = await prisma.user.findUnique({ where: { discordId: discordUser.id } });
 
     if (!user) {
@@ -53,22 +53,22 @@ router.get('/discord/callback', async (req, res) => {
         data: {
           discordId: discordUser.id,
           username: discordUser.username,
+          displayName: discordUser.global_name || discordUser.username,
           email: discordUser.email || `${discordUser.id}@discord.local`,
-          password: '', // ไม่ใช้พาสเวิร์ด
           avatarUrl: avatarUrl,
         },
       });
     } else {
       user = await prisma.user.update({
         where: { id: user.id },
-        data: { avatarUrl, username: discordUser.username }
+        data: { avatarUrl, username: discordUser.username, displayName: discordUser.global_name || discordUser.username }
       });
     }
 
-    // สร้าง JWT Token ของระบบเรา
+    // เธชเธฃเนเธฒเธ JWT Token เธเธญเธเธฃเธฐเธเธเน€เธฃเธฒ
     const token = jwt.sign({ userId: user.id }, process.env.JWT_SECRET as string, { expiresIn: '7d' });
 
-    // ส่ง Token กลับไปที่ Frontend
+    // เธชเนเธ Token เธเธฅเธฑเธเนเธเธ—เธตเน Frontend
     res.redirect(`${process.env.FRONTEND_URL}?token=${token}`);
 
   } catch (error) {
@@ -77,13 +77,29 @@ router.get('/discord/callback', async (req, res) => {
   }
 });
 
-// 3. เส้นทางสำหรับให้ Frontend ดึงข้อมูล Profile ตัวเอง (ต้องแนบ Token มาด้วย)
+// 3. เน€เธชเนเธเธ—เธฒเธเธชเธณเธซเธฃเธฑเธเนเธซเน Frontend เธ”เธถเธเธเนเธญเธกเธนเธฅ Profile เธ•เธฑเธงเน€เธญเธ (เธ•เนเธญเธเนเธเธ Token เธกเธฒเธ”เนเธงเธข)
 router.get('/me', authenticate, async (req, res) => {
   try {
     const userId = (req as any).user.userId;
     const user = await prisma.user.findUnique({ 
       where: { id: userId },
-      select: { id: true, username: true, email: true, avatarUrl: true, game: true, rank: true } // ไม่ส่ง password กลับไป
+      select: {
+        id: true,
+        username: true,
+        displayName: true,
+        email: true,
+        avatarUrl: true,
+        bio: true,
+        languages: true,
+        timezone: true,
+        contact: true,
+        games: {
+          select: {
+            rank: true,
+            game: { select: { id: true, name: true, slug: true } },
+          },
+        },
+      }
     });
     res.json(user);
   } catch (error) {
