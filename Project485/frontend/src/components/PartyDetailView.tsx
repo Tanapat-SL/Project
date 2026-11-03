@@ -87,7 +87,9 @@ export default function PartyDetailView() {
     voice: partyData.micRequired,
     image: mockParty.image,
     description: partyData.description || mockParty.description,
-    rankReq: [partyData.rankMin, partyData.rankMax].filter(Boolean).join(' - ') || 'Any rank',
+    rankReq: partyData.rankMin && partyData.rankMax
+      ? `${partyData.rankMin} - ${partyData.rankMax}`
+      : partyData.rankMin ? `${partyData.rankMin}+` : partyData.rankMax ? `Up to ${partyData.rankMax}` : 'Any rank',
     members: partyData.members?.filter((member: any) => member.status === 'ACCEPTED').map((member: any) => ({
       name: member.user?.username || 'Player',
       role: member.role === 'OWNER' ? 'Leader' : 'Member',

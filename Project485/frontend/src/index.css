@@ -16,6 +16,41 @@ body {
   background-attachment: fixed;
 }
 
+html[data-theme='light'] body {
+  background-color: #f5f6fb;
+  color: #202335;
+  background-image: radial-gradient(circle at 15% 50%, rgba(139, 92, 246, 0.07), transparent 25%), radial-gradient(circle at 85% 30%, rgba(236, 72, 153, 0.06), transparent 25%);
+}
+
+html[data-theme='light'] .bg-mf-dark { background-color: #f5f6fb; }
+html[data-theme='light'] .bg-mf-card { background-color: #ffffff; }
+html[data-theme='light'] .glass-panel { background-color: rgba(255, 255, 255, 0.88); border-color: #dfe3ec; }
+html[data-theme='light'] .text-white { color: #202335; }
+html[data-theme='light'] .text-gray-100,
+html[data-theme='light'] .text-gray-200,
+html[data-theme='light'] .text-gray-300 { color: #34394b; }
+html[data-theme='light'] .text-gray-400,
+html[data-theme='light'] .text-gray-500 { color: #687084; }
+html[data-theme='light'] .text-white[class*='bg-mf-primary'],
+html[data-theme='light'] .text-white[class*='bg-gradient-to-'],
+html[data-theme='light'] .text-white[class*='bg-black'] { color: #ffffff; }
+html[data-theme='light'] [class*='bg-black'] { color: #ffffff; }
+html[data-theme='light'] [class*='bg-gray-800'],
+html[data-theme='light'] [class*='bg-gray-900'] { background-color: #f0f2f7; }
+html[data-theme='light'] [class*='border-gray-7'],
+html[data-theme='light'] [class*='border-gray-8'] { border-color: #d8dce6; }
+html[data-theme='light'] input,
+html[data-theme='light'] textarea,
+html[data-theme='light'] select { color: #202335; }
+html[data-theme='light'] input::placeholder,
+html[data-theme='light'] textarea::placeholder { color: #8a90a0; }
+
+html[data-theme='purple'] body { background-color: #100b1e; }
+html[data-theme='purple'] .bg-mf-dark { background-color: #100b1e; }
+html[data-theme='purple'] .bg-mf-card { background-color: #1b142b; }
+html[data-theme='purple'] .glass-panel { border-color: #38294f; }
+html[data-theme='purple'] body { background-image: radial-gradient(circle at 15% 50%, rgba(167, 139, 250, 0.12), transparent 25%), radial-gradient(circle at 85% 30%, rgba(244, 114, 182, 0.1), transparent 25%); }
+
 ::-webkit-scrollbar {
   width: 8px;
 }

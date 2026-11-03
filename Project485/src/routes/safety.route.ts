@@ -34,6 +34,16 @@ router.post('/blocks', authenticate, async (req, res) => {
   res.status(201).json(block);
 });
 
+router.get('/blocks', authenticate, async (req, res) => {
+  const blockerId = (req as any).user.userId;
+  const blocks = await prisma.userBlock.findMany({
+    where: { blockerId },
+    include: { blocked: { select: { id: true, username: true, displayName: true, avatarUrl: true } } },
+    orderBy: { createdAt: 'desc' },
+  });
+  res.json(blocks.map(({ blocked, createdAt }) => ({ ...blocked, blockedAt: createdAt })));
+});
+
 router.delete('/blocks/:userId', authenticate, async (req, res) => {
   await prisma.userBlock.deleteMany({
     where: { blockerId: (req as any).user.userId, blockedId: Number(req.params.userId) },

@@ -95,8 +95,12 @@ router.get('/me', authenticate, async (req, res) => {
         contact: true,
         games: {
           select: {
+            id: true,
             rank: true,
-            game: { select: { id: true, name: true, slug: true } },
+            platform: true,
+            playStyle: true,
+            micEnabled: true,
+            game: { select: { id: true, name: true, slug: true, ranks: true } },
           },
         },
       }

@@ -15,14 +15,15 @@ export default function ExploreView() {
   const [creating, setCreating] = useState(false);
   const [rank, setRank] = useState('');
   const [region, setRegion] = useState('');
-  const [form, setForm] = useState({ gameId: '', title: '', description: '', maxMembers: 5, micRequired: true, region: 'Asia' });
+  const [form, setForm] = useState({ gameId: '', title: '', description: '', rankMin: '', rankMax: '', maxMembers: 5, micRequired: true, region: 'Asia' });
+  const createGameRanks: string[] = games.find(item => item.id === Number(form.gameId))?.ranks || [];
   const [aiQuery, setAiQuery] = useState('');
   const [aiMatches, setAiMatches] = useState<any[]>([]);
   const [aiLoading, setAiLoading] = useState(false);
 
-  const loadParties = async (selectedGame = '') => {
+  const loadParties = async (selectedGame = '', selectedRegion = region, selectedRank = rank) => {
     try {
-      const { data } = await apiClient.get('/parties', { params: { ...(selectedGame ? { game: selectedGame } : {}), ...(region ? { region } : {}), ...(rank ? { rank } : {}) } });
+      const { data } = await apiClient.get('/parties', { params: { ...(selectedGame ? { game: selectedGame } : {}), ...(selectedRegion ? { region: selectedRegion } : {}), ...(selectedRank ? { rank: selectedRank } : {}) } });
       setParties(data.map((party: any) => ({
         id: party.id,
         game: party.game.name,
@@ -31,6 +32,7 @@ export default function ExploreView() {
         max: party.maxMembers,
         owner: party.owner.username,
         roleNeeded: party.mode || 'Any role',
+        rankReq: [party.rankMin, party.rankMax].filter(Boolean).join(' - ') || 'Any rank',
         voice: party.micRequired,
         image: party.game.imageUrl || '',
       })));
@@ -59,7 +61,7 @@ export default function ExploreView() {
     setCreating(true);
     try {
       await apiClient.post('/parties', form);
-      setForm({ gameId: '', title: '', description: '', maxMembers: 5, micRequired: true, region: 'Asia' });
+      setForm({ gameId: '', title: '', description: '', rankMin: '', rankMax: '', maxMembers: 5, micRequired: true, region: 'Asia' });
       setShowCreate(false);
       await loadParties(game);
     } catch (error: any) {
@@ -89,21 +91,21 @@ export default function ExploreView() {
           <h2 className="text-3xl font-bold text-white mb-2">LFG Board</h2>
           <p className="text-gray-400">Find your perfect squad and rank up together.</p>
         </div>
-        <button onClick={() => setShowCreate(true)} className="flex items-center gap-2 bg-gradient-to-r from-mf-primary to-mf-secondary hover:opacity-90 px-6 py-3 rounded-xl font-semibold shadow-lg shadow-mf-primary/20 transition-all">
+        <button onClick={() => setShowCreate(true)} className="flex items-center gap-2 bg-gradient-to-r from-mf-primary to-mf-secondary hover:opacity-90 px-6 py-3 rounded-xl font-semibold text-white shadow-lg shadow-mf-primary/20 transition-all">
           <Plus className="w-5 h-5" /> Create Party
         </button>
       </div>
 
       <div className="flex gap-4 mb-8 overflow-x-auto pb-2 scrollbar-hide">
-        <select value={game} onChange={(event) => { setGame(event.target.value); loadParties(event.target.value); }} className="bg-mf-card border border-gray-700 text-white px-4 py-2.5 rounded-lg focus:outline-none focus:border-mf-primary">
+        <select value={game} onChange={(event) => { const nextGame = event.target.value; setGame(nextGame); setRank(''); loadParties(nextGame, region, ''); }} className="bg-mf-card border border-gray-700 text-white px-4 py-2.5 rounded-lg focus:outline-none focus:border-mf-primary">
           <option value="">All Games</option>
           {games.map(item => <option key={item.id} value={item.name}>{item.name}</option>)}
         </select>
-        <select value={rank} onChange={event => { setRank(event.target.value); }} className="bg-mf-card border border-gray-700 text-white px-4 py-2.5 rounded-lg focus:outline-none focus:border-mf-primary">
+        <select value={rank} onChange={event => { const nextRank = event.target.value; setRank(nextRank); loadParties(game, region, nextRank); }} className="bg-mf-card border border-gray-700 text-white px-4 py-2.5 rounded-lg focus:outline-none focus:border-mf-primary">
           <option value="">Any Rank</option>
           {(games.find(item => item.name === game)?.ranks || []).map((item: string) => <option key={item} value={item}>{item}</option>)}
         </select>
-        <select value={region} onChange={event => { setRegion(event.target.value); loadParties(game); }} className="bg-mf-card border border-gray-700 text-white px-4 py-2.5 rounded-lg focus:outline-none focus:border-mf-primary">
+        <select value={region} onChange={event => { const nextRegion = event.target.value; setRegion(nextRegion); loadParties(game, nextRegion, rank); }} className="bg-mf-card border border-gray-700 text-white px-4 py-2.5 rounded-lg focus:outline-none focus:border-mf-primary">
           <option value="">Any Region</option>
           {['Asia', 'Europe', 'North America', 'South America', 'Oceania', 'Middle East', 'Africa'].map(item => <option key={item}>{item}</option>)}
         </select>
@@ -140,6 +142,7 @@ export default function ExploreView() {
               <p className="text-sm text-gray-400 mb-4">Created by <span className="text-mf-accent font-medium">{party.owner}</span></p>
               <div className="space-y-3 mb-6 flex-1">
                 <div className="flex items-center gap-2 text-sm text-gray-300">Need: <span className="text-white font-medium">{party.roleNeeded}</span></div>
+                <div className="flex items-center gap-2 text-sm text-gray-300">Rank: <span className="text-white font-medium">{party.rankReq}</span></div>
                 <div className={`flex items-center gap-2 text-sm ${party.voice ? 'text-gray-300' : 'text-gray-500'}`}>
                   <Mic className={`w-4 h-4 ${party.voice ? 'text-green-400' : 'opacity-50'}`} />
                   {party.voice ? 'Mic Required' : 'Mic Optional'}
@@ -168,11 +171,25 @@ export default function ExploreView() {
               <h3 className="text-xl font-bold text-white">Create Party</h3>
               <button type="button" aria-label="Close" onClick={() => setShowCreate(false)}><X /></button>
             </div>
-            <select required value={form.gameId} onChange={e => setForm({ ...form, gameId: e.target.value })} className="w-full bg-gray-800 border border-gray-700 rounded-lg p-3 text-white">
+            <select required value={form.gameId} onChange={e => setForm({ ...form, gameId: e.target.value, rankMin: '', rankMax: '' })} className="w-full bg-gray-800 border border-gray-700 rounded-lg p-3 text-white">
               <option value="">Select game</option>
               {games.map(item => <option key={item.id} value={item.id}>{item.name}</option>)}
             </select>
             <input required maxLength={100} placeholder="Party title" value={form.title} onChange={e => setForm({ ...form, title: e.target.value })} className="w-full bg-gray-800 border border-gray-700 rounded-lg p-3 text-white" />
+            <div className="grid grid-cols-2 gap-3">
+              <label className="text-sm text-gray-400">Minimum rank
+                <select value={form.rankMin} onChange={e => setForm({ ...form, rankMin: e.target.value })} disabled={!form.gameId} className="mt-1 w-full bg-gray-800 border border-gray-700 rounded-lg p-3 text-white disabled:opacity-50">
+                  <option value="">Any rank</option>
+                  {createGameRanks.filter(item => !form.rankMax || createGameRanks.indexOf(item) <= createGameRanks.indexOf(form.rankMax)).map(item => <option key={item} value={item}>{item}</option>)}
+                </select>
+              </label>
+              <label className="text-sm text-gray-400">Maximum rank
+                <select value={form.rankMax} onChange={e => setForm({ ...form, rankMax: e.target.value })} disabled={!form.gameId} className="mt-1 w-full bg-gray-800 border border-gray-700 rounded-lg p-3 text-white disabled:opacity-50">
+                  <option value="">Any rank</option>
+                  {createGameRanks.filter(item => !form.rankMin || createGameRanks.indexOf(item) >= createGameRanks.indexOf(form.rankMin)).map(item => <option key={item} value={item}>{item}</option>)}
+                </select>
+              </label>
+            </div>
             <select value={form.region} onChange={e => setForm({ ...form, region: e.target.value })} className="w-full bg-gray-800 border border-gray-700 rounded-lg p-3 text-white">
               {['Asia', 'Europe', 'North America', 'South America', 'Oceania', 'Middle East', 'Africa'].map(item => <option key={item}>{item}</option>)}
             </select>

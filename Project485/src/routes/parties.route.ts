@@ -43,18 +43,29 @@ router.get('/', async (req, res) => {
 router.post('/', authenticate, async (req, res) => {
   const userId = (req as any).user.userId;
   const { gameId, title, description, mode, rankMin, rankMax, maxMembers, micRequired, language, region } = req.body;
-  if (!gameId || !title || Number(maxMembers) < 2) {
+  const parsedGameId = Number(gameId);
+  if (!Number.isInteger(parsedGameId) || parsedGameId < 1 || !title || !Number.isInteger(Number(maxMembers)) || Number(maxMembers) < 2) {
     return res.status(400).json({ message: 'gameId, title and maxMembers (minimum 2) are required' });
+  }
+  const selectedGame = await prisma.game.findUnique({ where: { id: parsedGameId }, select: { id: true, ranks: true } });
+  if (!selectedGame) return res.status(400).json({ message: 'Selected game was not found' });
+  const minRank = rankMin ? String(rankMin) : null;
+  const maxRank = rankMax ? String(rankMax) : null;
+  if ((minRank && !selectedGame.ranks.includes(minRank)) || (maxRank && !selectedGame.ranks.includes(maxRank))) {
+    return res.status(400).json({ message: 'Rank must be available for the selected game' });
+  }
+  if (minRank && maxRank && selectedGame.ranks.indexOf(minRank) > selectedGame.ranks.indexOf(maxRank)) {
+    return res.status(400).json({ message: 'Minimum rank cannot be higher than maximum rank' });
   }
   const party = await prisma.party.create({
     data: {
       ownerId: userId,
-      gameId: Number(gameId),
+      gameId: parsedGameId,
       title: String(title),
       description: description ? String(description) : null,
       mode,
-      rankMin: rankMin || null,
-      rankMax: rankMax || null,
+      rankMin: minRank,
+      rankMax: maxRank,
       maxMembers: Number(maxMembers),
       micRequired: Boolean(micRequired),
       language: language || null,

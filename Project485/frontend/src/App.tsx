@@ -11,6 +11,9 @@ import ProfileView from './components/ProfileView';
 import PartyDetailView from './components/PartyDetailView';
 import NotificationsView from './components/NotificationsView';
 
+import SettingsView from './components/SettingsView';
+
+
 const socket: Socket = io();
 
 function MainLayout() {
@@ -22,6 +25,7 @@ function MainLayout() {
   const currentPath = location.pathname;
 
   useEffect(() => {
+    document.documentElement.dataset.theme = localStorage.getItem('mf_theme') || 'dark';
     // 1. Socket Connection
     socket.on('connect', () => setIsConnected(true));
     socket.on('disconnect', () => setIsConnected(false));
@@ -77,14 +81,14 @@ function MainLayout() {
       {/* Sidebar Navigation */}
       <nav className="w-20 lg:w-64 glass-panel border-l-0 border-y-0 rounded-none border-r flex flex-col justify-between p-4 sticky top-0 h-screen z-50">
         <div>
-          <div className="flex items-center justify-center lg:justify-start gap-3 mb-10 px-2">
+          <a href="/" aria-label="MATCHFOUND home and refresh" className="flex items-center justify-center lg:justify-start gap-3 mb-10 px-2 rounded-lg focus:outline-none focus-visible:ring-2 focus-visible:ring-mf-primary">
             <div className="w-10 h-10 rounded-xl bg-gradient-to-br from-mf-primary to-mf-secondary flex items-center justify-center shadow-lg shadow-mf-primary/20 shrink-0">
               <Gamepad2 className="text-white w-6 h-6" />
             </div>
             <h1 className="text-xl font-bold tracking-wider hidden lg:block bg-clip-text text-transparent bg-gradient-to-r from-mf-primary to-mf-secondary">
               MATCHFOUND
             </h1>
-          </div>
+          </a>
 
           <div className="space-y-2">
             <Link to="/">
@@ -120,9 +124,9 @@ function MainLayout() {
             <div className={`w-2 h-2 rounded-full ${isConnected ? 'bg-green-500 shadow-[0_0_8px_#22c55e]' : 'bg-red-500'}`}></div>
             <span className="text-xs text-gray-400">{isConnected ? 'System Online' : 'Connecting...'}</span>
           </div>
-          <button className="w-full flex items-center justify-center lg:justify-start gap-3 p-3 rounded-xl text-gray-400 hover:bg-gray-800/50 hover:text-white transition-colors">
-            <Settings /> <span className="hidden lg:block font-medium">Settings</span>
-          </button>
+          <Link to="/settings">
+            <NavButton icon={<Settings />} label="Settings" active={currentPath === '/settings'} />
+          </Link>
           {currentUser && (
             <button onClick={handleLogout} className="w-full flex items-center justify-center lg:justify-start gap-3 p-3 rounded-xl text-gray-400 hover:text-red-400 hover:bg-red-500/10 transition-colors group">
               <LogOut className="group-hover:text-red-400" /> <span className="hidden lg:block font-medium">Logout</span>
@@ -140,6 +144,7 @@ function MainLayout() {
           <Route path="/party/:id" element={<PartyDetailView />} />
           <Route path="/matchmaker" element={<Navigate to="/" replace />} />
           <Route path="/notifications" element={<NotificationsView />} />
+          <Route path="/settings" element={<SettingsView />} />
         </Routes>
       </main>
     </div>
