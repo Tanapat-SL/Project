@@ -48,16 +48,7 @@ router.put('/me/games', auth_middleware_1.authenticate, async (req, res) => {
     ]);
     res.json(await prisma_1.prisma.userGame.findMany({ where: { userId }, include: { game: true } }));
 });
-router.get('/:id', async (req, res) => {
-    const user = await prisma_1.prisma.user.findUnique({
-        where: { id: Number(req.params.id) },
-        include: { games: { include: { game: true } }, availability: true },
-    });
-    if (!user)
-        return res.status(404).json({ message: 'User not found' });
-    res.json(user);
-});
-router.get('/search', async (req, res) => {
+router.get('/search', auth_middleware_1.authenticate, async (req, res) => {
     const { game, rank } = req.query;
     const users = await prisma_1.prisma.user.findMany({
         where: {
@@ -67,8 +58,48 @@ router.get('/search', async (req, res) => {
                     rank: rank ? String(rank) : undefined,
                 },
             },
-        }
+        },
+        select: { id: true, username: true, displayName: true, avatarUrl: true, bio: true },
     });
     res.json(users);
+});
+router.get('/:id', auth_middleware_1.authenticate, async (req, res) => {
+    const viewerId = req.user.userId;
+    const profileId = Number(req.params.id);
+    if (!Number.isInteger(profileId) || profileId < 1)
+        return res.status(400).json({ message: 'Invalid user ID' });
+    if (viewerId !== profileId) {
+        const block = await prisma_1.prisma.userBlock.findFirst({
+            where: { OR: [{ blockerId: viewerId, blockedId: profileId }, { blockerId: profileId, blockedId: viewerId }] },
+            select: { blockerId: true },
+        });
+        if (block)
+            return res.status(404).json({ message: 'User not found' });
+    }
+    const user = await prisma_1.prisma.user.findUnique({
+        where: { id: profileId },
+        select: {
+            id: true,
+            username: true,
+            displayName: true,
+            avatarUrl: true,
+            bio: true,
+            languages: true,
+            timezone: true,
+            games: {
+                select: {
+                    rank: true,
+                    platform: true,
+                    playStyle: true,
+                    micEnabled: true,
+                    game: { select: { id: true, name: true, slug: true, ranks: true } },
+                },
+            },
+            availability: { select: { dayOfWeek: true, startTime: true, endTime: true } },
+        },
+    });
+    if (!user)
+        return res.status(404).json({ message: 'User not found' });
+    res.json(user);
 });
 exports.default = router;

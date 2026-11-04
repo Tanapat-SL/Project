@@ -1,9 +1,9 @@
 import React, { useState, useEffect } from 'react';
 import { BrowserRouter, Routes, Route, Link, useLocation, Navigate } from 'react-router-dom';
 import { Search, MessageSquare, User, Gamepad2, Settings, LogOut, Bell } from 'lucide-react';
-import { io, Socket } from 'socket.io-client';
 import axios from 'axios';
 import { apiClient } from './api/client';
+import { socket } from './api/socket';
 
 import ExploreView from './components/ExploreView';
 import ChatView from './components/ChatView';
@@ -12,12 +12,11 @@ import PartyDetailView from './components/PartyDetailView';
 import NotificationsView from './components/NotificationsView';
 
 import SettingsView from './components/SettingsView';
+import { LandingPage, LoginPage, type Language } from './components/LandingPages';
 
-
-const socket: Socket = io();
 
 function MainLayout() {
-  const [isConnected, setIsConnected] = useState(false);
+  const [connectionState, setConnectionState] = useState<'connecting' | 'online' | 'offline'>(socket.connected ? 'online' : 'connecting');
   const [currentUser, setCurrentUser] = useState<any>(null);
   const [notificationCount, setNotificationCount] = useState(0);
   
@@ -25,10 +24,15 @@ function MainLayout() {
   const currentPath = location.pathname;
 
   useEffect(() => {
-    document.documentElement.dataset.theme = localStorage.getItem('mf_theme') || 'dark';
-    // 1. Socket Connection
-    socket.on('connect', () => setIsConnected(true));
-    socket.on('disconnect', () => setIsConnected(false));
+    document.documentElement.dataset.theme = localStorage.getItem('mf_theme') || 'light';
+    const handleConnect = () => setConnectionState('online');
+    const handleDisconnect = () => setConnectionState('connecting');
+    const handleConnectionError = () => setConnectionState('offline');
+    setConnectionState(socket.connected ? 'online' : 'connecting');
+    socket.on('connect', handleConnect);
+    socket.on('disconnect', handleDisconnect);
+    socket.on('connect_error', handleConnectionError);
+    if (!socket.connected) socket.connect();
     
     // 2. Auth Check (Discord Login Token)
     const params = new URLSearchParams(window.location.search);
@@ -46,8 +50,9 @@ function MainLayout() {
     }
 
     return () => {
-      socket.off('connect');
-      socket.off('disconnect');
+      socket.off('connect', handleConnect);
+      socket.off('disconnect', handleDisconnect);
+      socket.off('connect_error', handleConnectionError);
     };
 
     async function apiClientGetNotifications(token: string) {
@@ -106,7 +111,7 @@ function MainLayout() {
         <div className="space-y-2">
           {/* User Profile or Discord Login Button */}
           {currentUser ? (
-            <Link to="/profile" className={`flex items-center gap-3 p-3 rounded-xl mb-4 border transition-colors ${currentPath === '/profile' ? 'bg-mf-primary/10 border-mf-primary/40' : 'bg-gray-800/80 border-gray-700 hover:border-mf-primary/40'}`}>
+            <Link to="/profile" className={`flex items-center gap-3 p-3 rounded-xl mb-4 border transition-colors ${currentPath.startsWith('/profile') ? 'bg-mf-primary/10 border-mf-primary/40' : 'bg-gray-800/80 border-gray-700 hover:border-mf-primary/40'}`}>
               <img src={currentUser.avatarUrl} alt="Avatar" className="w-10 h-10 rounded-full border border-mf-primary object-cover shrink-0" />
               <div className="hidden lg:block overflow-hidden">
                 <p className="text-sm font-bold text-white truncate">{currentUser.displayName || currentUser.username}</p>
@@ -121,8 +126,8 @@ function MainLayout() {
           )}
 
           <div className="hidden lg:flex items-center gap-2 px-4 py-3 mb-4 rounded-lg bg-gray-800/50 border border-gray-700/50">
-            <div className={`w-2 h-2 rounded-full ${isConnected ? 'bg-green-500 shadow-[0_0_8px_#22c55e]' : 'bg-red-500'}`}></div>
-            <span className="text-xs text-gray-400">{isConnected ? 'System Online' : 'Connecting...'}</span>
+            <div className={`w-2 h-2 rounded-full ${connectionState === 'online' ? 'bg-green-500 shadow-[0_0_8px_#22c55e]' : connectionState === 'connecting' ? 'bg-yellow-500 animate-pulse' : 'bg-red-500'}`}></div>
+            <span className="text-xs text-gray-400">{connectionState === 'online' ? 'System Online' : connectionState === 'connecting' ? 'Connecting...' : 'Offline'}</span>
           </div>
           <Link to="/settings">
             <NavButton icon={<Settings />} label="Settings" active={currentPath === '/settings'} />
@@ -139,7 +144,8 @@ function MainLayout() {
       <main className="flex-1 p-4 md:p-6 lg:p-10 h-screen overflow-y-auto">
         <Routes>
           <Route path="/" element={<ExploreView />} />
-          <Route path="/chat" element={<ChatView />} />
+          <Route path="/chat" element={<ChatView currentUser={currentUser} />} />
+          <Route path="/profile/:userId" element={<ProfileView />} />
           <Route path="/profile" element={<ProfileView />} />
           <Route path="/party/:id" element={<PartyDetailView />} />
           <Route path="/matchmaker" element={<Navigate to="/" replace />} />
@@ -154,9 +160,57 @@ function MainLayout() {
 export default function App() {
   return (
     <BrowserRouter>
-      <MainLayout />
+      <AppEntry />
     </BrowserRouter>
   );
+}
+
+function AppEntry() {
+  const location = useLocation();
+  const [language, setLanguage] = useState<Language>(() =>
+    localStorage.getItem('mf_language') === 'en' ? 'en' : 'th'
+  );
+  const [authState, setAuthState] = useState<'checking' | 'guest' | 'signed-in'>('checking');
+
+  useEffect(() => {
+    localStorage.setItem('mf_language', language);
+  }, [language]);
+
+  useEffect(() => {
+    const params = new URLSearchParams(window.location.search);
+    const tokenFromUrl = params.get('token');
+    if (tokenFromUrl) {
+      localStorage.setItem('mf_token', tokenFromUrl);
+      window.history.replaceState({}, document.title, window.location.pathname);
+    }
+
+    const token = tokenFromUrl || localStorage.getItem('mf_token');
+    if (!token) {
+      setAuthState('guest');
+      return;
+    }
+
+    apiClient.get('/auth/me')
+      .then(() => setAuthState('signed-in'))
+      .catch(() => {
+        localStorage.removeItem('mf_token');
+        setAuthState('guest');
+      });
+  }, []);
+
+  if (authState === 'checking') {
+    return <div className="min-h-screen flex items-center justify-center bg-[#e8e8e6] text-[#111112]"><span className="h-2 w-2 rounded-full bg-red-600 animate-pulse mr-3" />MATCHFOUND</div>;
+  }
+
+  if (authState === 'signed-in') {
+    return location.pathname === '/login' ? <Navigate to="/" replace /> : <MainLayout />;
+  }
+
+  const hasAuthError = new URLSearchParams(location.search).has('error');
+  if (location.pathname === '/' && !hasAuthError) {
+    return <LandingPage language={language} onLanguageChange={setLanguage} />;
+  }
+  return <LoginPage language={language} onLanguageChange={setLanguage} />;
 }
 
 function NavButton({ icon, label, active = false, badge }: { icon: React.ReactNode, label: string, active?: boolean, badge?: string }) {

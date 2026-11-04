@@ -6,13 +6,13 @@ type ThemeName = 'dark' | 'light' | 'purple';
 type BlockedUser = { id: number; username: string; displayName?: string | null; avatarUrl?: string | null; blockedAt: string };
 
 const themes: { id: ThemeName; name: string; description: string; swatches: string[] }[] = [
-  { id: 'dark', name: 'Dark', description: 'ธีมมืดแบบเดิม', swatches: ['#0b0f19', '#8b5cf6', '#ec4899'] },
-  { id: 'light', name: 'Light', description: 'พื้นหลังสว่าง อ่านง่าย', swatches: ['#f5f6fb', '#8b5cf6', '#ec4899'] },
-  { id: 'purple', name: 'Midnight Purple', description: 'โทนม่วงเข้ม', swatches: ['#100b1e', '#a78bfa', '#f472b6'] },
+  { id: 'dark', name: 'Dark', description: 'ธีมมืด', swatches: ['#0b0f19', '#dc2626', '#b91c1c'] },
+  { id: 'light', name: 'MATCHFOUND Light', description: 'พื้นหลังสีเทาและสีแดงแบบหน้าแนะนำเว็บ', swatches: ['#e8e8e6', '#dc2626', '#b91c1c'] },
+  { id: 'purple', name: 'Midnight Purple', description: 'โทนม่วงเข้ม', swatches: ['#100b1e', '#dc2626', '#b91c1c'] },
 ];
 
 export default function SettingsView() {
-  const [theme, setTheme] = useState<ThemeName>((localStorage.getItem('mf_theme') as ThemeName) || 'dark');
+  const [theme, setTheme] = useState<ThemeName>((localStorage.getItem('mf_theme') as ThemeName) || 'light');
   const [blockedUsers, setBlockedUsers] = useState<BlockedUser[]>([]);
   const [loading, setLoading] = useState(true);
   const [removingId, setRemovingId] = useState<number | null>(null);

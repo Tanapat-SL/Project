@@ -1,4 +1,5 @@
 import React, { useEffect, useState } from 'react';
+import { useNavigate, useParams } from 'react-router-dom';
 import { User, Shield, Gamepad2, Edit3, X, Save, Plus, Trash2 } from 'lucide-react';
 import { apiClient } from '../api/client';
 
@@ -29,6 +30,9 @@ const platforms = [
 ];
 
 export default function ProfileView() {
+  const { userId } = useParams<{ userId: string }>();
+  const navigate = useNavigate();
+  const isOwnProfile = !userId;
   const [editing, setEditing] = useState(false);
   const [saving, setSaving] = useState(false);
   const [availableGames, setAvailableGames] = useState<GameOption[]>([]);
@@ -37,6 +41,12 @@ export default function ProfileView() {
   const [newGameId, setNewGameId] = useState('');
 
   const loadProfile = async () => {
+    if (userId) {
+      const { data: user } = await apiClient.get(`/users/${userId}`);
+      setProfile(user);
+      setGameDrafts([]);
+      return;
+    }
     const [{ data: user }, { data: games }] = await Promise.all([
       apiClient.get('/auth/me'),
       apiClient.get('/games'),
@@ -54,9 +64,9 @@ export default function ProfileView() {
   };
 
   useEffect(() => {
-    if (!localStorage.getItem('mf_token')) return;
+    if (!userId && !localStorage.getItem('mf_token')) return;
     loadProfile().catch(() => undefined);
-  }, []);
+  }, [userId]);
 
   const startEditing = () => {
     setGameDrafts((profile.games || []).map((item: any) => ({
@@ -116,6 +126,7 @@ export default function ProfileView() {
 
   return (
     <div className="max-w-4xl mx-auto animate-in fade-in duration-500 pb-20">
+      {!isOwnProfile && <button onClick={() => navigate(-1)} className="mb-4 text-sm text-gray-500 hover:text-mf-primary">← Back</button>}
       <div className="glass-panel p-8 mb-6 relative overflow-hidden">
         <div className="absolute top-0 left-0 w-full h-32 bg-gradient-to-r from-mf-primary/20 to-mf-secondary/20 border-b border-gray-800"></div>
         <div className="relative pt-16 flex flex-col md:flex-row gap-6 items-start md:items-end">
@@ -132,9 +143,9 @@ export default function ProfileView() {
             <h1 className="text-3xl font-bold text-white mb-1">{profile.displayName || profile.username || 'My Profile'}</h1>
             <p className="text-gray-400 flex items-center gap-2"><span className="w-2 h-2 rounded-full bg-green-500"></span> Online</p>
           </div>
-          <button onClick={startEditing} className="flex items-center justify-center gap-2 bg-gray-800 hover:bg-gray-700 border border-gray-700 px-4 py-2 rounded-lg text-sm transition-colors">
+          {isOwnProfile && <button onClick={startEditing} className="flex items-center justify-center gap-2 bg-gray-800 hover:bg-gray-700 border border-gray-700 px-4 py-2 rounded-lg text-sm transition-colors">
             <Edit3 className="w-4 h-4" /> Edit Profile
-          </button>
+          </button>}
         </div>
       </div>
 

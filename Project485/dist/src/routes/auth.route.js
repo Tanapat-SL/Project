@@ -12,19 +12,33 @@ const router = (0, express_1.Router)();
 // 1. เธชเนเธเธเธนเนเนเธเนเนเธเธซเธเนเธฒเธฅเนเธญเธเธญเธดเธ Discord
 router.get('/discord', (req, res) => {
     const clientId = process.env.DISCORD_CLIENT_ID;
-    const redirectUri = encodeURIComponent(process.env.DISCORD_REDIRECT_URI);
-    const discordLoginUrl = `https://discord.com/api/oauth2/authorize?client_id=${clientId}&redirect_uri=${redirectUri}&response_type=code&scope=identify%20email`;
+    const redirectUri = process.env.DISCORD_REDIRECT_URI;
+    const frontendUrl = process.env.FRONTEND_URL || 'http://localhost:5173';
+    if (!clientId || !process.env.DISCORD_CLIENT_SECRET || !redirectUri) {
+        return res.redirect(`${frontendUrl}/login?error=discord_not_configured`);
+    }
+    const query = new URLSearchParams({
+        client_id: clientId,
+        redirect_uri: redirectUri,
+        response_type: 'code',
+        scope: 'identify email',
+    });
+    const discordLoginUrl = `https://discord.com/api/oauth2/authorize?${query.toString()}`;
     res.redirect(discordLoginUrl);
 });
 // 2. เธฃเธฑเธเธเนเธญเธกเธนเธฅเธเธฅเธฑเธเธเธฒเธ Discord
 router.get('/discord/callback', async (req, res) => {
     const { code } = req.query;
+    const frontendUrl = process.env.FRONTEND_URL || 'http://localhost:5173';
+    if (typeof code !== 'string' || !code) {
+        return res.redirect(`${frontendUrl}/login?error=discord_cancelled`);
+    }
     try {
         const params = new URLSearchParams({
             client_id: process.env.DISCORD_CLIENT_ID,
             client_secret: process.env.DISCORD_CLIENT_SECRET,
             grant_type: 'authorization_code',
-            code: code,
+            code,
             redirect_uri: process.env.DISCORD_REDIRECT_URI,
         });
         // เนเธฅเธ Token เธเธฒเธ Discord
@@ -62,11 +76,11 @@ router.get('/discord/callback', async (req, res) => {
         // เธชเธฃเนเธฒเธ JWT Token เธเธญเธเธฃเธฐเธเธเน€เธฃเธฒ
         const token = jsonwebtoken_1.default.sign({ userId: user.id }, process.env.JWT_SECRET, { expiresIn: '7d' });
         // เธชเนเธ Token เธเธฅเธฑเธเนเธเธ—เธตเน Frontend
-        res.redirect(`${process.env.FRONTEND_URL}?token=${token}`);
+        res.redirect(`${frontendUrl}/?token=${token}`);
     }
     catch (error) {
         console.error('Discord OAuth Error:', error);
-        res.redirect(`${process.env.FRONTEND_URL}?error=auth_failed`);
+        res.redirect(`${frontendUrl}/login?error=auth_failed`);
     }
 });
 // 3. เน€เธชเนเธเธ—เธฒเธเธชเธณเธซเธฃเธฑเธเนเธซเน Frontend เธ”เธถเธเธเนเธญเธกเธนเธฅ Profile เธ•เธฑเธงเน€เธญเธ (เธ•เนเธญเธเนเธเธ Token เธกเธฒเธ”เนเธงเธข)

@@ -1,5 +1,5 @@
 import React, { useEffect, useState } from 'react';
-import { useParams, useNavigate } from 'react-router-dom';
+import { useParams, useNavigate, Link } from 'react-router-dom';
 import { Users, Mic, ArrowLeft, Send } from 'lucide-react';
 import { apiClient } from '../api/client';
 
@@ -58,6 +58,7 @@ export default function PartyDetailView() {
   // Mock data based on ID (in real app, fetch from backend)
   const mockParty = { 
     id, 
+    ownerId: undefined as number | undefined,
     game: 'Valorant', 
     title: 'LF2M Ranked Push (Immortal+)', 
     current: 3, 
@@ -69,9 +70,9 @@ export default function PartyDetailView() {
     description: "Looking for 2 more chill people to push rank tonight. We usually play passive on defense and explosive on attack. Please have a working mic and be willing to comm. Don't be toxic.",
     rankReq: 'Immortal 1+',
     members: [
-      { name: 'JettMain99', role: 'Duelist', isOwner: true },
-      { name: 'SovaLineupTTV', role: 'Initiator', isOwner: false },
-      { name: 'OmenSmurf', role: 'Flex', isOwner: false },
+      { id: undefined as number | undefined, avatarUrl: undefined as string | undefined, name: 'JettMain99', role: 'Duelist', isOwner: true },
+      { id: undefined as number | undefined, avatarUrl: undefined as string | undefined, name: 'SovaLineupTTV', role: 'Initiator', isOwner: false },
+      { id: undefined as number | undefined, avatarUrl: undefined as string | undefined, name: 'OmenSmurf', role: 'Flex', isOwner: false },
     ]
   };
 
@@ -91,6 +92,8 @@ export default function PartyDetailView() {
       ? `${partyData.rankMin} - ${partyData.rankMax}`
       : partyData.rankMin ? `${partyData.rankMin}+` : partyData.rankMax ? `Up to ${partyData.rankMax}` : 'Any rank',
     members: partyData.members?.filter((member: any) => member.status === 'ACCEPTED').map((member: any) => ({
+      id: member.user?.id,
+      avatarUrl: member.user?.avatarUrl,
       name: member.user?.username || 'Player',
       role: member.role === 'OWNER' ? 'Leader' : 'Member',
       isOwner: member.role === 'OWNER',
@@ -137,7 +140,7 @@ export default function PartyDetailView() {
               {party.game}
             </span>
             <h1 className="text-3xl md:text-4xl font-bold text-white mb-2">{party.title}</h1>
-            <p className="text-gray-300">Created by <span className="text-mf-accent font-semibold">{party.owner}</span></p>
+            <p className="text-gray-300">Created by {party.ownerId ? <Link to={`/profile/${party.ownerId}`} className="text-mf-accent font-semibold hover:underline">{party.owner}</Link> : <span className="text-mf-accent font-semibold">{party.owner}</span>}</p>
           </div>
         </div>
 
@@ -157,10 +160,8 @@ export default function PartyDetailView() {
                 {party.members.map((m: any, i: number) => (
                   <div key={i} className="flex items-center justify-between p-3 bg-gray-800/50 border border-gray-700 rounded-lg">
                     <div className="flex items-center gap-3">
-                      <div className="w-8 h-8 rounded-full bg-gray-700 flex items-center justify-center text-xs font-bold">
-                        {m.name.substring(0, 2).toUpperCase()}
-                      </div>
-                      <span className="font-semibold text-white">{m.name} {m.isOwner && <span className="text-mf-primary text-xs ml-1">(Leader)</span>}</span>
+                      {m.avatarUrl ? <img src={m.avatarUrl} alt={`${m.name} Discord avatar`} className="w-8 h-8 rounded-full object-cover" /> : <div className="w-8 h-8 rounded-full bg-gray-700 flex items-center justify-center text-xs font-bold">{m.name.substring(0, 2).toUpperCase()}</div>}
+                      {m.id ? <Link to={`/profile/${m.id}`} className="font-semibold text-white hover:text-mf-primary">{m.name}</Link> : <span className="font-semibold text-white">{m.name}</span>} {m.isOwner && <span className="text-mf-primary text-xs ml-1">(Leader)</span>}
                     </div>
                     <span className="text-sm text-gray-400">{m.role}</span>
                   </div>

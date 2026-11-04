@@ -1,13 +1,21 @@
 import React, { useEffect, useRef, useState } from 'react';
-import { Send } from 'lucide-react';
-import { io } from 'socket.io-client';
+import { Link } from 'react-router-dom';
+import { Send, UserRound } from 'lucide-react';
 import { apiClient } from '../api/client';
+import { socket } from '../api/socket';
 
 type Party = {
   id: number;
   title: string;
   game?: { name: string };
-  members?: Array<{ user?: { id: number; username: string } }>;
+  members?: Array<{ user?: ChatUser }>;
+};
+
+type ChatUser = {
+  id: number;
+  username: string;
+  displayName?: string | null;
+  avatarUrl?: string | null;
 };
 
 type ChatMessage = {
@@ -15,23 +23,24 @@ type ChatMessage = {
   content: string;
   createdAt: string;
   partyId?: number;
-  sender: { id: number; username: string };
+  sender: ChatUser;
 };
 
-const socket = io();
-
-export default function ChatView() {
+export default function ChatView({ currentUser }: { currentUser: ChatUser | null }) {
   const [parties, setParties] = useState<Party[]>([]);
   const [selectedParty, setSelectedParty] = useState<Party | null>(null);
   const [messages, setMessages] = useState<ChatMessage[]>([]);
   const [content, setContent] = useState('');
   const bottomRef = useRef<HTMLDivElement>(null);
-  const [friends, setFriends] = useState<any[]>([]);
-  const [selectedFriend, setSelectedFriend] = useState<any>(null);
+  const [friends, setFriends] = useState<ChatUser[]>([]);
+  const [blockedUserIds, setBlockedUserIds] = useState<number[]>([]);
+  const [selectedFriend, setSelectedFriend] = useState<ChatUser | null>(null);
   const [chatMode, setChatMode] = useState<'party' | 'direct'>('party');
   const [safetyTarget, setSafetyTarget] = useState<any>(null);
   const [reportReason, setReportReason] = useState('');
   const [safetyStatus, setSafetyStatus] = useState('');
+  const activeContact = chatMode === 'party' ? selectedParty : selectedFriend;
+  const canSendMessage = chatMode === 'party' ? Boolean(selectedParty) : Boolean(selectedFriend);
 
   useEffect(() => {
     apiClient.get('/parties/mine').then(({ data }) => {
@@ -39,19 +48,20 @@ export default function ChatView() {
       setSelectedParty(data[0] || null);
     }).catch(() => setParties([]));
     apiClient.get('/friends').then(({ data }) => setFriends(data)).catch(() => setFriends([]));
+    apiClient.get('/blocks').then(({ data }) => setBlockedUserIds(data.map((user: ChatUser) => user.id))).catch(() => setBlockedUserIds([]));
   }, []);
 
   useEffect(() => {
     if (!selectedFriend || chatMode !== 'direct') return;
     apiClient.get(`/chat/direct/${selectedFriend.id}`).then(({ data }) => setMessages(data)).catch(() => setMessages([]));
     const receiveMessage = (message: ChatMessage) => {
-      if (!message.partyId) setMessages((current) => current.some(item => item.id === message.id) ? current : [...current, message]);
+      if (!message.partyId && !blockedUserIds.includes(message.sender.id)) setMessages((current) => current.some(item => item.id === message.id) ? current : [...current, message]);
     };
     socket.on('receive_direct_message', receiveMessage);
     return () => {
       socket.off('receive_direct_message', receiveMessage);
     };
-  }, [selectedFriend, chatMode]);
+  }, [selectedFriend, chatMode, blockedUserIds]);
 
   useEffect(() => {
     if (chatMode !== 'party') return;
@@ -63,7 +73,7 @@ export default function ChatView() {
 
     socket.emit('join_party_room', selectedParty.id);
     const receiveMessage = (message: ChatMessage) => {
-      if (message.partyId === selectedParty.id) {
+      if (message.partyId === selectedParty.id && !blockedUserIds.includes(message.sender.id)) {
         setMessages((current) => current.some((item) => item.id === message.id)
           ? current
           : [...current, message]);
@@ -74,28 +84,32 @@ export default function ChatView() {
     return () => {
       socket.off('receive_party_message', receiveMessage);
     };
-  }, [selectedParty]);
+  }, [selectedParty, blockedUserIds]);
 
   useEffect(() => {
     bottomRef.current?.scrollIntoView({ behavior: 'smooth' });
   }, [messages]);
 
   const sendMessage = async () => {
-    if (chatMode === 'direct') {
-      if (!selectedFriend || !content.trim()) return;
-      const messageText = content.trim();
-      setContent('');
-      const { data } = await apiClient.post(`/chat/direct/${selectedFriend.id}`, { content: messageText });
-      setMessages(current => [...current, data]);
-      socket.emit('send_direct_message', { receiverId: selectedFriend.id, ...data });
-      return;
-    }
-    if (!selectedParty || !content.trim()) return;
+    if (!canSendMessage || !content.trim()) return;
     const messageText = content.trim();
     setContent('');
-    const { data } = await apiClient.post(`/chat/party/${selectedParty.id}`, { content: messageText });
-    setMessages((current) => [...current.filter((message) => message.id !== data.id), data]);
-    socket.emit('send_party_message', { partyId: selectedParty.id, ...data });
+    setSafetyStatus('');
+    try {
+      if (chatMode === 'direct' && selectedFriend) {
+        const { data } = await apiClient.post(`/chat/direct/${selectedFriend.id}`, { content: messageText });
+        setMessages(current => [...current, data]);
+        socket.emit('send_direct_message', { receiverId: selectedFriend.id, ...data });
+        return;
+      }
+      if (!selectedParty) return;
+      const { data } = await apiClient.post(`/chat/party/${selectedParty.id}`, { content: messageText });
+      setMessages((current) => [...current.filter((message) => message.id !== data.id), data]);
+      socket.emit('send_party_message', { partyId: selectedParty.id, ...data });
+    } catch (error: any) {
+      setContent(messageText);
+      setSafetyStatus(error.response?.data?.message || 'ส่งข้อความไม่สำเร็จ กรุณาลองอีกครั้ง');
+    }
   };
 
   const submitSafety = async (action: 'reports' | 'blocks') => {
@@ -105,6 +119,15 @@ export default function ChatView() {
         ? { targetUserId: safetyTarget.id, reason: reportReason.trim() || 'Inappropriate behavior' }
         : { userId: safetyTarget.id });
       setSafetyStatus(action === 'reports' ? 'Report submitted.' : 'Player blocked.');
+      if (action === 'blocks') {
+        setBlockedUserIds(current => current.includes(safetyTarget.id) ? current : [...current, safetyTarget.id]);
+        setFriends(current => current.filter(friend => friend.id !== safetyTarget.id));
+        setMessages(current => current.filter(message => message.sender.id !== safetyTarget.id));
+        if (selectedFriend?.id === safetyTarget.id) {
+          setSelectedFriend(null);
+          setMessages([]);
+        }
+      }
       setSafetyTarget(null);
       setReportReason('');
     } catch (error: any) {
@@ -114,6 +137,7 @@ export default function ChatView() {
 
   return (
     <div className="h-[calc(100vh-6rem)] flex flex-col md:flex-row gap-6 max-w-6xl mx-auto animate-in fade-in duration-500">
+      {safetyStatus && <div role="status" className="fixed bottom-5 right-5 z-[100] rounded-xl border border-red-500/30 bg-white px-4 py-3 text-sm text-gray-800 shadow-xl">{safetyStatus}</div>}
       <div className="w-full md:w-80 glass-panel p-4 flex flex-col h-1/3 md:h-full flex-shrink-0">
         <div className="grid grid-cols-2 gap-2 mb-4">
           <button onClick={() => setChatMode('party')} className={`py-2 rounded-lg text-sm ${chatMode === 'party' ? 'bg-mf-primary text-white' : 'bg-gray-800 text-gray-300'}`}>Party lobby</button>
@@ -137,9 +161,13 @@ export default function ChatView() {
           <div className="space-y-2 overflow-y-auto pr-2">
             {!friends.length && <p className="text-sm text-gray-500 px-2">Add a friend before starting direct chat.</p>}
             {friends.map(friend => (
-              <button key={friend.id} onClick={() => setSelectedFriend(friend)} className={`w-full text-left p-3 rounded-xl ${selectedFriend?.id === friend.id ? 'bg-mf-primary/10 border border-mf-primary/20' : 'hover:bg-gray-800/50'}`}>
-                <span className="font-semibold text-white">{friend.displayName || friend.username}</span>
-              </button>
+              <div key={friend.id} className={`flex items-center gap-2 rounded-xl p-2 transition-colors ${selectedFriend?.id === friend.id ? 'bg-mf-primary/10 border border-mf-primary/20' : 'hover:bg-gray-800/50'}`}>
+                <button onClick={() => setSelectedFriend(friend)} className="flex min-w-0 flex-1 items-center gap-3 text-left">
+                  <Avatar user={friend} className="h-10 w-10" />
+                  <span className="min-w-0 truncate font-semibold text-white">{friend.displayName || friend.username}</span>
+                </button>
+                <Link to={`/profile/${friend.id}`} aria-label={`View ${friend.displayName || friend.username}'s profile`} title="View profile" className="rounded-lg p-2 text-gray-500 hover:bg-mf-primary/10 hover:text-mf-primary"><UserRound className="h-4 w-4" /></Link>
+              </div>
             ))}
           </div>
         )}
@@ -147,8 +175,9 @@ export default function ChatView() {
           <div className="mt-4 pt-4 border-t border-gray-700 overflow-y-auto">
             <p className="text-xs uppercase text-gray-500 font-semibold mb-2 px-2">Lobby Players</p>
             {selectedParty.members?.map((member: any) => member.user && (
-              <div key={member.user.id} className="flex items-center justify-between p-2 rounded-lg hover:bg-gray-800/50">
-                <span className="text-sm text-white truncate">{member.user.username}</span>
+              <div key={member.user.id} className="flex items-center gap-2 p-2 rounded-lg hover:bg-gray-800/50">
+                <Avatar user={member.user} className="h-7 w-7" />
+                <Link to={`/profile/${member.user.id}`} className="min-w-0 flex-1 text-sm text-white truncate hover:text-mf-primary">{member.user.displayName || member.user.username}</Link>
                 <button onClick={() => setSafetyTarget(member.user)} className="text-xs text-gray-400 hover:text-red-300">Report / Block</button>
               </div>
             ))}
@@ -158,25 +187,29 @@ export default function ChatView() {
 
       <div className="flex-1 glass-panel flex flex-col h-2/3 md:h-full">
         <div className="p-4 border-b border-gray-800 bg-gray-900/50 rounded-t-2xl">
-          <h3 className="font-bold text-white">{selectedParty?.title || 'No party selected'}</h3>
-          <p className="text-xs text-gray-400">{selectedParty?.members?.length || 0} Members</p>
+          <div className="flex items-center gap-3">
+            {chatMode === 'direct' && selectedFriend && <Avatar user={selectedFriend} className="h-10 w-10" />}
+            <div>
+              <h3 className="font-bold text-white">{activeContact ? ('title' in activeContact ? activeContact.title : activeContact.displayName || activeContact.username) : chatMode === 'party' ? 'No party selected' : 'Select a friend'}</h3>
+              <p className="text-xs text-gray-400">{chatMode === 'party' ? `${selectedParty?.members?.length || 0} Members` : selectedFriend?.username || 'Direct message'}</p>
+            </div>
+          </div>
         </div>
 
         <div className="flex-1 p-4 overflow-y-auto space-y-4">
           {messages.map((message) => (
-            <div key={message.id} className="flex gap-3">
-              <div className="w-8 h-8 rounded-full bg-gradient-to-tr from-purple-500 to-pink-500 flex-shrink-0 flex items-center justify-center text-xs font-bold">
-                {message.sender.username.substring(0, 2).toUpperCase()}
-              </div>
-              <div>
-                <div className="flex items-baseline gap-2">
-                  <span className="font-semibold text-mf-accent text-sm">{message.sender.username}</span>
+            <div key={message.id} className={`flex items-end gap-3 ${currentUser?.id === message.sender.id ? 'justify-end' : 'justify-start'}`}>
+              {currentUser?.id !== message.sender.id && <Avatar user={message.sender} className="h-8 w-8" />}
+              <div className={`max-w-[82%] ${currentUser?.id === message.sender.id ? 'text-right' : 'text-left'}`}>
+                <div className={`flex items-baseline gap-2 ${currentUser?.id === message.sender.id ? 'justify-end' : 'justify-start'}`}>
+                  <Link to={currentUser?.id === message.sender.id ? '/profile' : `/profile/${message.sender.id}`} className="font-semibold text-mf-accent text-sm hover:underline">{currentUser?.id === message.sender.id ? 'You' : message.sender.displayName || message.sender.username}</Link>
                   <span className="text-xs text-gray-500">
                     {new Date(message.createdAt).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}
                   </span>
                 </div>
-                <p className="text-gray-300 mt-1 bg-gray-800 p-3 rounded-2xl rounded-tl-sm inline-block">{message.content}</p>
+                <p className={`mt-1 p-3 rounded-2xl inline-block text-left break-words ${currentUser?.id === message.sender.id ? 'bg-mf-primary text-white rounded-tr-sm' : 'text-gray-300 bg-gray-800 rounded-tl-sm'}`}>{message.content}</p>
               </div>
+              {currentUser?.id === message.sender.id && <Avatar user={currentUser} className="h-8 w-8" />}
 
               {safetyTarget && (
                 <div className="fixed inset-0 z-[90] bg-black/75 flex items-center justify-center p-4" onMouseDown={event => { if (event.target === event.currentTarget) setSafetyTarget(null); }}>
@@ -194,7 +227,7 @@ export default function ChatView() {
               )}
             </div>
           ))}
-          {!messages.length && selectedParty && <p className="text-center text-gray-500 py-10">No messages yet.</p>}
+          {!messages.length && canSendMessage && <p className="text-center text-gray-500 py-10">No messages yet.</p>}
           <div ref={bottomRef} />
         </div>
 
@@ -206,12 +239,12 @@ export default function ChatView() {
               value={content}
               onChange={(event) => setContent(event.target.value)}
               onKeyDown={(event) => { if (event.key === 'Enter') void sendMessage(); }}
-              disabled={!selectedParty}
+              disabled={!canSendMessage}
               className="flex-1 bg-gray-800 border border-gray-700 rounded-xl py-3 px-4 text-white focus:outline-none focus:border-mf-primary focus:ring-1 focus:ring-mf-primary"
             />
             <button
               onClick={() => void sendMessage()}
-              disabled={!selectedParty || !content.trim()}
+              disabled={!canSendMessage || !content.trim()}
               className="p-3 bg-mf-primary hover:bg-mf-primary/80 rounded-xl text-white transition-colors flex-shrink-0 disabled:opacity-50"
             >
               <Send className="w-5 h-5" />
@@ -221,4 +254,15 @@ export default function ChatView() {
       </div>
     </div>
   );
+}
+
+function Avatar({ user, className }: { user: ChatUser; className: string }) {
+  const label = user.displayName || user.username;
+  if (user.avatarUrl) {
+    return <img src={user.avatarUrl} alt={`${label} Discord avatar`} className={`${className} flex-shrink-0 rounded-full object-cover ring-1 ring-black/10`} />;
+  }
+
+  return <div aria-label={`${label} avatar`} className={`${className} flex flex-shrink-0 items-center justify-center rounded-full bg-gradient-to-br from-red-500 to-red-800 text-xs font-bold text-white`}>
+    {label.slice(0, 2).toUpperCase()}
+  </div>;
 }

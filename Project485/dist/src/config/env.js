@@ -14,7 +14,7 @@ const envSchema = zod_1.z.object({
     DATABASE_URL: zod_1.z.string().min(1, 'DATABASE_URL is required'),
     DISCORD_CLIENT_ID: zod_1.z.string().default(''),
     DISCORD_CLIENT_SECRET: zod_1.z.string().default(''),
-    DISCORD_REDIRECT_URI: zod_1.z.string().url().default('http://localhost:5001/api/auth/discord/callback'),
+    DISCORD_REDIRECT_URI: zod_1.z.string().url().default('http://localhost:5000/api/auth/discord/callback'),
     JWT_SECRET: zod_1.z.string().min(32, 'JWT_SECRET must be at least 32 characters'),
     SESSION_TTL_DAYS: zod_1.z.coerce.number().int().positive().default(7),
 });

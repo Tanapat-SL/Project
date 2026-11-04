@@ -15,8 +15,13 @@ router.get('/party/:partyId', auth_middleware_1.authenticate, async (req, res) =
         update: {},
         create: { type: 'PARTY', partyId },
     });
+    const blocks = await prisma_1.prisma.userBlock.findMany({
+        where: { OR: [{ blockerId: userId }, { blockedId: userId }] },
+        select: { blockerId: true, blockedId: true },
+    });
+    const blockedUserIds = blocks.map(block => block.blockerId === userId ? block.blockedId : block.blockerId);
     const messages = await prisma_1.prisma.message.findMany({
-        where: { conversationId: conversation.id },
+        where: { conversationId: conversation.id, senderId: { notIn: blockedUserIds } },
         include: { sender: { select: { id: true, username: true, avatarUrl: true } } },
         orderBy: { createdAt: 'asc' },
     });
@@ -45,6 +50,18 @@ router.post('/party/:partyId', auth_middleware_1.authenticate, async (req, res) 
 router.get('/direct/:friendId', auth_middleware_1.authenticate, async (req, res) => {
     const userId = req.user.userId;
     const friendId = Number(req.params.friendId);
+    if (!Number.isInteger(friendId) || friendId < 1 || friendId === userId)
+        return res.status(400).json({ message: 'Invalid friend ID' });
+    const block = await prisma_1.prisma.userBlock.findFirst({
+        where: { OR: [{ blockerId: userId, blockedId: friendId }, { blockerId: friendId, blockedId: userId }] },
+    });
+    if (block)
+        return res.status(403).json({ message: 'Direct chat is unavailable because one user has blocked the other' });
+    const friendship = await prisma_1.prisma.friendRequest.findFirst({
+        where: { status: 'ACCEPTED', OR: [{ requesterId: userId, receiverId: friendId }, { requesterId: friendId, receiverId: userId }] },
+    });
+    if (!friendship)
+        return res.status(403).json({ message: 'Direct chat requires an accepted friend' });
     const conversation = await prisma_1.prisma.conversation.findFirst({
         where: {
             type: 'DIRECT',
@@ -64,6 +81,13 @@ router.get('/direct/:friendId', auth_middleware_1.authenticate, async (req, res)
 router.post('/direct/:friendId', auth_middleware_1.authenticate, async (req, res) => {
     const userId = req.user.userId;
     const friendId = Number(req.params.friendId);
+    if (!Number.isInteger(friendId) || friendId < 1 || friendId === userId)
+        return res.status(400).json({ message: 'Invalid friend ID' });
+    const block = await prisma_1.prisma.userBlock.findFirst({
+        where: { OR: [{ blockerId: userId, blockedId: friendId }, { blockerId: friendId, blockedId: userId }] },
+    });
+    if (block)
+        return res.status(403).json({ message: 'Direct chat is unavailable because one user has blocked the other' });
     const friendship = await prisma_1.prisma.friendRequest.findFirst({
         where: { status: 'ACCEPTED', OR: [{ requesterId: userId, receiverId: friendId }, { requesterId: friendId, receiverId: userId }] },
     });

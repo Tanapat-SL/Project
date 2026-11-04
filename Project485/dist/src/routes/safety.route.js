@@ -64,6 +64,11 @@ router.post('/friends/requests', auth_middleware_1.authenticate, async (req, res
 });
 router.get('/friends', auth_middleware_1.authenticate, async (req, res) => {
     const userId = req.user.userId;
+    const blocks = await prisma_1.prisma.userBlock.findMany({
+        where: { OR: [{ blockerId: userId }, { blockedId: userId }] },
+        select: { blockerId: true, blockedId: true },
+    });
+    const blockedUserIds = new Set(blocks.map(block => block.blockerId === userId ? block.blockedId : block.blockerId));
     const requests = await prisma_1.prisma.friendRequest.findMany({
         where: { status: 'ACCEPTED', OR: [{ requesterId: userId }, { receiverId: userId }] },
         include: {
@@ -71,7 +76,9 @@ router.get('/friends', auth_middleware_1.authenticate, async (req, res) => {
             receiver: { select: { id: true, username: true, displayName: true, avatarUrl: true } },
         },
     });
-    res.json(requests.map(request => request.requesterId === userId ? request.receiver : request.requester));
+    res.json(requests
+        .map(request => request.requesterId === userId ? request.receiver : request.requester)
+        .filter(friend => !blockedUserIds.has(friend.id)));
 });
 router.get('/friends/requests', auth_middleware_1.authenticate, async (req, res) => {
     const requests = await prisma_1.prisma.friendRequest.findMany({

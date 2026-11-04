@@ -1,10 +1,8 @@
 import React, { useEffect, useState } from 'react';
 import { Users, Mic, Plus, ChevronRight, X, Sparkles, Search } from 'lucide-react';
 import { useNavigate } from 'react-router-dom';
-import { io } from 'socket.io-client';
 import { apiClient } from '../api/client';
-
-const socket = io();
+import { socket } from '../api/socket';
 
 export default function ExploreView() {
   const navigate = useNavigate();

@@ -20,6 +20,12 @@ app.set('io', io);
 
 io.on('connection', (socket) => {
   console.log('A user connected:', socket.id);
+  const publishOnlineCount = () => io.emit('online_count', io.of('/').sockets.size);
+  publishOnlineCount();
+
+  socket.on('request_online_count', () => {
+    socket.emit('online_count', io.of('/').sockets.size);
+  });
 
   // Join Personal Room (for direct messages & invites)
   socket.on('join_user_room', (userId) => {
@@ -58,6 +64,7 @@ io.on('connection', (socket) => {
 
   socket.on('disconnect', () => {
     console.log('User disconnected:', socket.id);
+    publishOnlineCount();
   });
 });
 

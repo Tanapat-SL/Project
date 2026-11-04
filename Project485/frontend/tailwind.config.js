@@ -1,1 +1,1 @@
-export default { content: ["./index.html", "./src/**/*.{js,ts,jsx,tsx}"], theme: { extend: { colors: { 'mf-dark': '#0B0F19', 'mf-card': '#151A27', 'mf-primary': '#8B5CF6', 'mf-secondary': '#EC4899', 'mf-accent': '#06B6D4' } } }, plugins: [] }
+export default { content: ["./index.html", "./src/**/*.{js,ts,jsx,tsx}"], theme: { extend: { colors: { 'mf-dark': '#0B0F19', 'mf-card': '#151A27', 'mf-primary': '#dc2626', 'mf-secondary': '#b91c1c', 'mf-accent': '#ef4444' } } }, plugins: [] }
