@@ -1,8 +1,19 @@
+# Dependencies
 node_modules/
+
+# Build output and caches
 dist/
-.env
-.env.local
-.env.*.local
+frontend/dist/
 .vite/
 coverage/
+
+# Local environment and secrets
+.env
+.env.*
+!.env.example
+
+# Logs and runtime files
 *.log
+*.pid
+*.seed
+*.pid.lock
