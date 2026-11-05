@@ -39,22 +39,7 @@ io.on('connection', (socket) => {
     console.log(`User ${socket.id} joined party room party_${partyId}`);
   });
 
-  // Send Direct Message
-  socket.on('send_dm', (data) => {
-    // data: { receiverId, content, senderId, senderName }
-    io.to(`user_${data.receiverId}`).emit('receive_dm', data);
-  });
-
-  socket.on('send_direct_message', (data) => {
-    io.to(`user_${data.receiverId}`).emit('receive_direct_message', data);
-    io.to(`user_${data.senderId}`).emit('receive_direct_message', data);
-  });
-
-  // Send Party Message
-  socket.on('send_party_message', (data) => {
-    // data: { partyId, content, senderId, senderName }
-    io.to(`party_${data.partyId}`).emit('receive_party_message', data);
-  });
+  // Messages are published only by authenticated REST routes after persistence and safety checks.
 
   // Party Join Request Notification
   socket.on('request_join_party', (data) => {

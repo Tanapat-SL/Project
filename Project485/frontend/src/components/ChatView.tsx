@@ -49,6 +49,7 @@ export default function ChatView({ currentUser }: { currentUser: ChatUser | null
     }).catch(() => setParties([]));
     apiClient.get('/friends').then(({ data }) => setFriends(data)).catch(() => setFriends([]));
     apiClient.get('/blocks').then(({ data }) => setBlockedUserIds(data.map((user: ChatUser) => user.id))).catch(() => setBlockedUserIds([]));
+    apiClient.get('/ai/safety/status').then(({ data }) => setSafetyStatus(data.provider === 'openai' ? data.notice : data.notice)).catch(() => undefined);
   }, []);
 
   useEffect(() => {
@@ -99,13 +100,11 @@ export default function ChatView({ currentUser }: { currentUser: ChatUser | null
       if (chatMode === 'direct' && selectedFriend) {
         const { data } = await apiClient.post(`/chat/direct/${selectedFriend.id}`, { content: messageText });
         setMessages(current => [...current, data]);
-        socket.emit('send_direct_message', { receiverId: selectedFriend.id, ...data });
         return;
       }
       if (!selectedParty) return;
       const { data } = await apiClient.post(`/chat/party/${selectedParty.id}`, { content: messageText });
       setMessages((current) => [...current.filter((message) => message.id !== data.id), data]);
-      socket.emit('send_party_message', { partyId: selectedParty.id, ...data });
     } catch (error: any) {
       setContent(messageText);
       setSafetyStatus(error.response?.data?.message || 'ส่งข้อความไม่สำเร็จ กรุณาลองอีกครั้ง');

@@ -1,6 +1,7 @@
 import { Router } from 'express';
 import { prisma } from '../lib/prisma';
 import { authenticate } from '../middlewares/auth.middleware';
+import { checkContent } from '../services/safety.service';
 
 const router = Router();
 
@@ -35,7 +36,7 @@ router.get('/', async (req, res) => {
       owner: { select: { id: true, username: true, avatarUrl: true } },
       members: { where: { status: 'ACCEPTED' }, include: { user: { select: { id: true, username: true } } } },
     },
-    orderBy: { createdAt: 'desc' },
+    orderBy: [{ bumpedAt: 'desc' }, { createdAt: 'desc' }],
   });
   res.json(parties);
 });
@@ -43,9 +44,23 @@ router.get('/', async (req, res) => {
 router.post('/', authenticate, async (req, res) => {
   const userId = (req as any).user.userId;
   const { gameId, title, description, mode, rankMin, rankMax, maxMembers, micRequired, language, region } = req.body;
+  const safety = await checkContent(`${String(title || '')}\n${String(description || '')}`);
+  if (safety.level === 'BLOCK') {
+    return res.status(400).json({ code: safety.code, message: 'The party details do not follow our community safety rules.' });
+  }
   const parsedGameId = Number(gameId);
   if (!Number.isInteger(parsedGameId) || parsedGameId < 1 || !title || !Number.isInteger(Number(maxMembers)) || Number(maxMembers) < 2) {
     return res.status(400).json({ message: 'gameId, title and maxMembers (minimum 2) are required' });
+  }
+  const activeParty = await prisma.party.findFirst({
+    where: { ownerId: userId, status: { in: ['OPEN', 'FULL'] } },
+    select: { id: true, title: true },
+  });
+  if (activeParty) {
+    return res.status(409).json({
+      code: 'ACTIVE_PARTY_LIMIT',
+      message: `คุณมีห้องเปิดอยู่แล้ว "${activeParty.title}" กรุณาปิดหรือลบห้องเดิมก่อนสร้างห้องใหม่`,
+    });
   }
   const selectedGame = await prisma.game.findUnique({ where: { id: parsedGameId }, select: { id: true, ranks: true } });
   if (!selectedGame) return res.status(400).json({ message: 'Selected game was not found' });
@@ -77,6 +92,51 @@ router.post('/', authenticate, async (req, res) => {
   });
   req.app.get('io')?.emit('party_created', { partyId: party.id });
   res.status(201).json(party);
+});
+
+router.patch('/:id', authenticate, async (req, res) => {
+  const userId = (req as any).user.userId;
+  const partyId = Number(req.params.id);
+  const party = await prisma.party.findUnique({ where: { id: partyId } });
+  if (!party) return res.status(404).json({ message: 'Party not found' });
+  if (party.ownerId !== userId) return res.status(403).json({ message: 'Only the party owner can edit this party' });
+
+  const title = req.body.title === undefined ? party.title : String(req.body.title).trim().slice(0, 100);
+  const description = req.body.description === undefined ? party.description : String(req.body.description ?? '').trim().slice(0, 1000);
+  const maxMembers = req.body.maxMembers === undefined ? party.maxMembers : Number(req.body.maxMembers);
+  const micRequired = req.body.micRequired === undefined ? party.micRequired : Boolean(req.body.micRequired);
+  if (!title || !Number.isInteger(maxMembers) || maxMembers < 2 || maxMembers > 20) {
+    return res.status(400).json({ message: 'Invalid party title or member limit' });
+  }
+  const acceptedMembers = await prisma.partyMember.count({ where: { partyId, status: 'ACCEPTED' } });
+  if (maxMembers < acceptedMembers) return res.status(400).json({ message: 'Maximum members cannot be lower than the current roster' });
+  const safety = await checkContent(`${title}\n${description}`);
+  if (safety.level === 'BLOCK') {
+    return res.status(400).json({ code: safety.code, message: 'The party details do not follow our community safety rules.' });
+  }
+  const updated = await prisma.party.update({
+    where: { id: partyId },
+    data: { title, description, maxMembers, micRequired },
+  });
+  req.app.get('io')?.emit('party_updated', { partyId });
+  res.json(updated);
+});
+
+router.post('/:id/bump', authenticate, async (req, res) => {
+  const userId = (req as any).user.userId;
+  const partyId = Number(req.params.id);
+  const party = await prisma.party.findUnique({ where: { id: partyId } });
+  if (!party) return res.status(404).json({ message: 'Party not found' });
+  if (party.ownerId !== userId) return res.status(403).json({ message: 'Only the party owner can bump this party' });
+  const cooldownSeconds = 30 * 60;
+  const elapsed = (Date.now() - new Date(party.bumpedAt).getTime()) / 1000;
+  if (elapsed < cooldownSeconds) {
+    const waitMinutes = Math.ceil((cooldownSeconds - elapsed) / 60);
+    return res.status(429).json({ code: 'PARTY_BUMP_COOLDOWN', message: `ดันโพสต์ได้อีกใน ${waitMinutes} นาที`, waitMinutes });
+  }
+  const updated = await prisma.party.update({ where: { id: partyId }, data: { bumpedAt: new Date() } });
+  req.app.get('io')?.emit('party_updated', { partyId });
+  res.json({ bumpedAt: updated.bumpedAt, message: 'โพสต์ของคุณถูกดันขึ้นหน้าแรกแล้ว' });
 });
 
 router.delete('/:id', authenticate, async (req, res) => {

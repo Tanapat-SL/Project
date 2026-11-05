@@ -18,6 +18,9 @@ export default function ExploreView() {
   const [aiQuery, setAiQuery] = useState('');
   const [aiMatches, setAiMatches] = useState<any[]>([]);
   const [aiLoading, setAiLoading] = useState(false);
+  const [playerQuery, setPlayerQuery] = useState('');
+  const [playerResults, setPlayerResults] = useState<any[]>([]);
+  const [playerLoading, setPlayerLoading] = useState(false);
 
   const loadParties = async (selectedGame = '', selectedRegion = region, selectedRank = rank) => {
     try {
@@ -82,6 +85,20 @@ export default function ExploreView() {
     }
   };
 
+  const searchPlayers = async (event: React.FormEvent) => {
+    event.preventDefault();
+    if (!playerQuery.trim()) return;
+    setPlayerLoading(true);
+    try {
+      const { data } = await apiClient.get('/users/search', { params: { q: playerQuery.trim() } });
+      setPlayerResults(data);
+    } catch {
+      setPlayerResults([]);
+    } finally {
+      setPlayerLoading(false);
+    }
+  };
+
   return (
     <div className="max-w-6xl mx-auto animate-in fade-in duration-500 pb-20">
       <div className="flex flex-col md:flex-row justify-between items-start md:items-center mb-10 gap-4">
@@ -108,6 +125,22 @@ export default function ExploreView() {
           {['Asia', 'Europe', 'North America', 'South America', 'Oceania', 'Middle East', 'Africa'].map(item => <option key={item}>{item}</option>)}
         </select>
       </div>
+
+      <form onSubmit={searchPlayers} className="glass-panel p-4 mb-6 flex flex-col sm:flex-row gap-3">
+        <Search className="w-5 h-5 text-mf-primary shrink-0 mt-2.5 sm:mt-2" />
+        <input value={playerQuery} onChange={event => setPlayerQuery(event.target.value)} maxLength={100} placeholder="ค้นหาเพื่อนด้วยชื่อผู้เล่น..." className="flex-1 bg-gray-800 border border-gray-700 rounded-lg px-4 py-2 text-white outline-none focus:border-mf-primary" />
+        <button disabled={playerLoading} className="bg-gray-700 hover:bg-gray-600 px-5 py-2 rounded-lg text-white disabled:opacity-60">{playerLoading ? 'กำลังค้นหา...' : 'ค้นหาเพื่อน'}</button>
+      </form>
+      {playerResults.length > 0 && (
+        <div className="glass-panel mb-8 p-4 grid gap-3 sm:grid-cols-2 lg:grid-cols-3">
+          {playerResults.map(player => (
+            <button key={player.id} onClick={() => navigate(`/profile/${player.id}`)} className="flex items-center gap-3 rounded-lg border border-gray-700 bg-gray-900/60 p-3 text-left hover:border-mf-primary/50">
+              <div className="grid h-10 w-10 place-items-center rounded-full bg-mf-primary/20 font-bold text-mf-primary">{(player.displayName || player.username || '?').slice(0, 2).toUpperCase()}</div>
+              <div className="min-w-0"><p className="truncate font-semibold text-white">{player.displayName || player.username}</p><p className="truncate text-xs text-gray-400">@{player.username}</p></div>
+            </button>
+          ))}
+        </div>
+      )}
 
       <form onSubmit={runAiMatch} className="glass-panel p-4 mb-8 flex flex-col sm:flex-row gap-3">
         <div className="flex items-center gap-2 text-mf-primary shrink-0"><Sparkles className="w-5 h-5" /><span className="font-semibold text-white">AI Party Helper</span></div>

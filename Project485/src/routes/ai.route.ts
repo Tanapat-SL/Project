@@ -1,18 +1,40 @@
 import { Router } from 'express';
 import { prisma } from '../lib/prisma';
 import { authenticate } from '../middlewares/auth.middleware';
+import { checkContent } from '../services/safety.service';
 
 const router = Router();
+
+const normalizeQuery = (value: string) => value.toLowerCase();
+
+router.get('/safety/status', authenticate, async (_req, res) => {
+  const enabled = Boolean(process.env.OPENAI_API_KEY);
+  res.json({
+    enabled,
+    provider: enabled ? 'openai' : 'local-fallback',
+    notice: enabled
+      ? 'Content is sent to OpenAI moderation for safety review.'
+      : 'Basic local keyword filtering is active. Automated filtering can make mistakes.',
+  });
+});
+
+router.post('/safety/check', authenticate, async (req, res) => {
+  const content = String(req.body.content || '').slice(0, 2000);
+  if (!content.trim()) return res.status(400).json({ message: 'content is required' });
+  res.json(await checkContent(content));
+});
 
 router.post('/match-search', authenticate, async (req, res) => {
   const query = String(req.body.query || '').slice(0, 500);
   const gameName = String(req.body.game || '').trim();
-  const mic = req.body.requiresMic === true;
+  const normalized = normalizeQuery(query);
+  const explicitlyNoMic = /(ไม่ใช้ไมค์|ไม่ใช้ไมค|ไม่ต้องใช้ไมค์|without mic|no mic)/u.test(normalized);
+  const mic = req.body.requiresMic === true || (/mic|ไมค์|ไมค/u.test(normalized) && !explicitlyNoMic);
   if (!query && !gameName) return res.status(400).json({ message: 'A search query or game is required' });
 
   const inferredGame = gameName || ['Valorant', 'Apex Legends', 'CS2', 'Overwatch 2']
     .find(name => query.toLowerCase().includes(name.toLowerCase()));
-  const languageMatch = /thai|ไทย/.test(query.toLowerCase()) ? 'th' : '';
+  const languageMatch = /thai|ไทย/.test(normalized) ? 'th' : /english|อังกฤษ/.test(normalized) ? 'en' : '';
 
   const candidates = await prisma.user.findMany({
     where: {
@@ -51,7 +73,12 @@ router.post('/match-search', authenticate, async (req, res) => {
     take: 20,
   });
   res.json({
-    filters: { game: inferredGame || null, language: languageMatch || null, requiresMic: mic },
+    filters: {
+      game: inferredGame || null,
+      language: languageMatch || null,
+      requiresMic: explicitlyNoMic ? false : mic,
+      micSpecified: mic || explicitlyNoMic,
+    },
     matches: parties.map(party => ({
       id: party.id,
       partyId: party.id,

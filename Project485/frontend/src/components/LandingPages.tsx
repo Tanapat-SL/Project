@@ -50,16 +50,48 @@ const copy = {
 } as const;
 
 function LanguagePicker({ language, onLanguageChange, dark = false }: LanguageProps & { dark?: boolean }) {
+  const [open, setOpen] = useState(false);
+  const currentLabel = language === 'th' ? 'ไทย' : 'English';
+
+  const chooseLanguage = (nextLanguage: Language) => {
+    onLanguageChange(nextLanguage);
+    setOpen(false);
+  };
+
   return (
-    <label className={`inline-flex items-center gap-2 rounded-full border px-3 py-2 text-sm transition-colors ${dark ? 'border-white/10 bg-white/[0.05] text-white hover:bg-white/10' : 'border-black/10 bg-white/60 text-[#191919] hover:bg-white'}`}>
-      <Languages className="h-4 w-4" aria-hidden="true" />
-      <span className="sr-only">Choose language</span>
-      <select aria-label="Choose language" value={language} onChange={(event) => onLanguageChange(event.target.value as Language)} className="cursor-pointer appearance-none bg-transparent font-semibold outline-none">
-        <option className="text-black" value="th">ไทย</option>
-        <option className="text-black" value="en">English</option>
-      </select>
-      <ChevronDown className="h-3.5 w-3.5" aria-hidden="true" />
-    </label>
+    <div className="relative z-[80]">
+      <button
+        type="button"
+        aria-label="Choose language"
+        aria-haspopup="listbox"
+        aria-expanded={open}
+        onClick={() => setOpen(current => !current)}
+        className={`inline-flex h-10 min-w-[104px] items-center justify-center gap-2 rounded-full border px-3 text-sm font-semibold transition-colors ${dark ? 'border-white/10 bg-white/[0.05] text-white hover:bg-white/10' : 'border-black/10 bg-white/90 text-[#191919] shadow-sm hover:bg-white'}`}
+      >
+        <Languages className="h-4 w-4 shrink-0" aria-hidden="true" />
+        <span>{currentLabel}</span>
+        <ChevronDown className={`h-3.5 w-3.5 shrink-0 transition-transform ${open ? 'rotate-180' : ''}`} aria-hidden="true" />
+      </button>
+      {open && (
+        <div role="listbox" aria-label="Choose language" className={`absolute right-0 top-[calc(100%+8px)] min-w-[120px] overflow-hidden rounded-xl border p-1.5 shadow-2xl ${dark ? 'border-white/10 bg-[#222224]' : 'border-black/10 bg-white'}`}>
+          {([
+            ['th', 'ไทย'],
+            ['en', 'English'],
+          ] as const).map(([value, label]) => (
+            <button
+              key={value}
+              type="button"
+              role="option"
+              aria-selected={language === value}
+              onClick={() => chooseLanguage(value)}
+              className={`block w-full rounded-lg px-3 py-2 text-left text-sm font-semibold transition ${language === value ? 'bg-[#dc2626] text-white' : dark ? 'text-white hover:bg-white/10' : 'text-[#191919] hover:bg-black/5'}`}
+            >
+              {label}
+            </button>
+          ))}
+        </div>
+      )}
+    </div>
   );
 }
 
@@ -71,6 +103,34 @@ export function LandingPage({ language, onLanguageChange }: LanguageProps) {
   const t = copy[language];
   const navigate = useNavigate();
   const [onlineCount, setOnlineCount] = useState<number | null>(null);
+  const [selectedGame, setSelectedGame] = useState(0);
+
+  const recommendedGames = [
+    {
+      name: 'VALORANT',
+      tag: language === 'th' ? 'เกมยิงกลยุทธ์ 5v5' : 'Tactical 5v5 shooter',
+      image: 'https://images.unsplash.com/photo-1542751371-adc38448a05e?auto=format&fit=crop&w=900&q=85',
+      accent: '#ff4655',
+    },
+    {
+      name: 'Apex Legends',
+      tag: language === 'th' ? 'เกมยิง Battle Royale' : 'Battle Royale shooter',
+      image: 'https://cdn.cloudflare.steamstatic.com/steam/apps/1172470/library_600x900_2x.jpg',
+      accent: '#e8793c',
+    },
+    {
+      name: 'Counter-Strike 2',
+      tag: language === 'th' ? 'FPS แข่งทีมสุดเข้มข้น' : 'Competitive team FPS',
+      image: 'https://cdn.cloudflare.steamstatic.com/steam/apps/730/library_600x900_2x.jpg',
+      accent: '#d5a94a',
+    },
+    {
+      name: 'Overwatch 2',
+      tag: language === 'th' ? 'ฮีโร่ชูตเตอร์แบบทีม' : 'Team-based hero shooter',
+      image: 'https://cdn.cloudflare.steamstatic.com/steam/apps/2357570/library_600x900_2x.jpg',
+      accent: '#fa9c1e',
+    },
+  ];
 
   useEffect(() => {
     const updateCount = (count: number) => setOnlineCount(count);
@@ -105,7 +165,7 @@ export function LandingPage({ language, onLanguageChange }: LanguageProps) {
       </header>
 
       <main>
-        <section id="games" className="relative mx-auto grid min-h-[620px] max-w-[1440px] items-center gap-8 px-6 py-16 sm:px-10 lg:min-h-[690px] lg:grid-cols-[0.92fr_1.08fr] lg:px-16 lg:py-20">
+        <section className="relative mx-auto grid min-h-[620px] max-w-[1440px] items-center gap-8 px-6 py-16 sm:px-10 lg:min-h-[690px] lg:grid-cols-[0.92fr_1.08fr] lg:px-16 lg:py-20">
           <div className="pointer-events-none absolute inset-0 overflow-hidden" aria-hidden="true">
             <div className="absolute -right-20 top-0 h-full w-[40%] -skew-x-[28deg] bg-white/35" />
             <div className="absolute right-[29%] top-0 h-[55%] w-[13%] -skew-x-[28deg] bg-black/[0.035]" />
@@ -138,6 +198,53 @@ export function LandingPage({ language, onLanguageChange }: LanguageProps) {
               <div className="relative h-full overflow-hidden rounded-xl bg-[radial-gradient(ellipse_at_50%_20%,#c2ff00_0%,transparent_24%),radial-gradient(ellipse_at_75%_70%,#667e08_0%,transparent_42%),linear-gradient(145deg,#20210c,#080a05_60%,#303608)]">
                 <div className="absolute inset-0 opacity-30" style={{ backgroundImage: 'radial-gradient(#d5ff00 1px, transparent 1px)', backgroundSize: '13px 13px' }} />
                 <div className="absolute inset-x-0 bottom-5 text-center text-white"><div className="mx-auto mb-2 grid h-[70px] w-[70px] place-items-center rounded-full border-4 border-white/70 bg-gradient-to-br from-amber-100 via-stone-700 to-black text-3xl shadow-lg">◉</div><div className="font-black">Zywoo <span className="text-red-400">✦</span></div><div className="mt-1 text-[10px] font-bold uppercase tracking-[0.16em] text-lime-100/70">CS2 · FACEIT LVL 9</div></div>
+              </div>
+            </div>
+          </div>
+        </section>
+
+        <section id="games" className="scroll-mt-20 bg-[#f4f3f0] px-6 py-16 sm:px-10 lg:px-16 lg:py-20">
+          <div className="mx-auto max-w-6xl">
+            <div className="mb-8 flex flex-col justify-between gap-4 sm:flex-row sm:items-end">
+              <div>
+                <p className="mb-3 text-xs font-black uppercase tracking-[0.24em] text-[#dc2626]">{language === 'th' ? 'เลือกเกมที่คุณเล่น' : 'Choose your game'}</p>
+                <h2 className="text-3xl font-black tracking-tight sm:text-5xl">{language === 'th' ? 'เกมแนะนำ' : 'Featured games'}</h2>
+              </div>
+              <p className="max-w-sm text-sm leading-6 text-black/55">{language === 'th' ? 'เลือกเกมเพื่อดูภาพตัวอย่างและค้นหาทีมที่เข้ากับสไตล์ของคุณ' : 'Select a game to preview it and find teammates that match your style.'}</p>
+            </div>
+
+            <div className="grid gap-5 lg:grid-cols-[1fr_1.35fr]">
+              <div className="grid grid-cols-2 gap-3">
+                {recommendedGames.map((game, index) => (
+                  <button
+                    key={game.name}
+                    type="button"
+                    onClick={() => setSelectedGame(index)}
+                    aria-pressed={selectedGame === index}
+                    className={`group relative h-36 overflow-hidden rounded-xl border text-left transition duration-300 sm:h-44 ${selectedGame === index ? 'border-[#dc2626] ring-2 ring-[#dc2626]/20' : 'border-black/10 hover:-translate-y-1 hover:border-black/30'}`}
+                  >
+                    <img src={game.image} alt={game.name} className="absolute inset-0 h-full w-full object-cover transition duration-500 group-hover:scale-105" />
+                    <span className="absolute inset-0 bg-gradient-to-t from-black/90 via-black/10 to-transparent" />
+                    <span className="absolute inset-x-0 bottom-0 p-4 text-white">
+                      <span className="block text-lg font-black">{game.name}</span>
+                      <span className="mt-1 block text-xs text-white/70">{game.tag}</span>
+                    </span>
+                  </button>
+                ))}
+              </div>
+
+              <div className="relative min-h-[330px] overflow-hidden rounded-2xl bg-[#111112] shadow-xl sm:min-h-[368px]">
+                <img key={recommendedGames[selectedGame].name} src={recommendedGames[selectedGame].image} alt={`${recommendedGames[selectedGame].name} preview`} className="absolute inset-0 h-full w-full object-cover animate-in fade-in duration-500" />
+                <div className="absolute inset-0 bg-gradient-to-r from-black/85 via-black/30 to-transparent" />
+                <div className="absolute bottom-0 left-0 max-w-md p-7 text-white sm:p-10">
+                  <div className="mb-3 h-1 w-12 rounded-full" style={{ backgroundColor: recommendedGames[selectedGame].accent }} />
+                  <p className="text-xs font-black uppercase tracking-[0.22em] text-white/60">{language === 'th' ? 'เกมที่แนะนำ' : 'Featured game'}</p>
+                  <h3 className="mt-2 text-3xl font-black sm:text-4xl">{recommendedGames[selectedGame].name}</h3>
+                  <p className="mt-3 text-sm text-white/75">{recommendedGames[selectedGame].tag}</p>
+                  <button onClick={() => navigate('/login')} className="mt-6 inline-flex items-center gap-2 rounded-md bg-[#dc2626] px-5 py-3 text-sm font-black text-white transition hover:bg-[#b91c1c]">
+                    {language === 'th' ? 'หาเพื่อนร่วมทีม' : 'Find teammates'} <ArrowRight className="h-4 w-4" />
+                  </button>
+                </div>
               </div>
             </div>
           </div>

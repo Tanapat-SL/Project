@@ -172,6 +172,7 @@ model Party {
   micRequired Boolean     @default(false)
   language    String?
   region      String?
+  bumpedAt    DateTime    @default(now())
   status      PartyStatus @default(OPEN)
   createdAt   DateTime    @default(now())
   updatedAt   DateTime    @updatedAt

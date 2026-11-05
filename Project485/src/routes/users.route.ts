@@ -50,9 +50,16 @@ router.put('/me/games', authenticate, async (req, res) => {
 });
 
 router.get('/search', authenticate, async (req, res) => {
-  const { game, rank } = req.query;
+  const { game, rank, q } = req.query;
+  const query = String(q || '').trim();
   const users = await prisma.user.findMany({
     where: {
+      ...(query ? {
+        OR: [
+          { username: { contains: query, mode: 'insensitive' } },
+          { displayName: { contains: query, mode: 'insensitive' } },
+        ],
+      } : {}),
       games: {
         some: {
           game: game ? { name: String(game) } : undefined,

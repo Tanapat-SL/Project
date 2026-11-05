@@ -1,6 +1,7 @@
 import { Router } from 'express';
 import { prisma } from '../lib/prisma';
 import { authenticate } from '../middlewares/auth.middleware';
+import { checkContent } from '../services/safety.service';
 
 const router = Router();
 
@@ -33,6 +34,10 @@ router.post('/party/:partyId', authenticate, async (req, res) => {
   const partyId = Number(req.params.partyId);
   const content = String(req.body.content || '').trim().slice(0, 2000);
   if (!content) return res.status(400).json({ message: 'Message content is required' });
+  const safety = await checkContent(content);
+  if (safety.level === 'BLOCK') {
+    return res.status(400).json({ code: safety.code, message: 'Your message does not follow our community safety rules. Please revise it.' });
+  }
 
   const member = await prisma.partyMember.findUnique({ where: { partyId_userId: { partyId, userId } } });
   if (!member || member.status !== 'ACCEPTED') return res.status(403).json({ message: 'Party membership required' });
@@ -46,6 +51,7 @@ router.post('/party/:partyId', authenticate, async (req, res) => {
     data: { conversationId: conversation.id, senderId: userId, content },
     include: { sender: { select: { id: true, username: true, avatarUrl: true } } },
   });
+  req.app.get('io')?.to(`party_${partyId}`).emit('receive_party_message', { ...message, partyId });
   res.status(201).json(message);
 });
 
@@ -91,6 +97,10 @@ router.post('/direct/:friendId', authenticate, async (req, res) => {
   if (!friendship) return res.status(403).json({ message: 'Direct chat requires an accepted friend' });
   const content = String(req.body.content || '').trim().slice(0, 2000);
   if (!content) return res.status(400).json({ message: 'Message content is required' });
+  const safety = await checkContent(content);
+  if (safety.level === 'BLOCK') {
+    return res.status(400).json({ code: safety.code, message: 'Your message does not follow our community safety rules. Please revise it.' });
+  }
   let conversation = await prisma.conversation.findFirst({
     where: { type: 'DIRECT', members: { some: { userId } }, AND: { members: { some: { userId: friendId } } } },
   });
@@ -106,6 +116,9 @@ router.post('/direct/:friendId', authenticate, async (req, res) => {
     data: { conversationId: conversation.id, senderId: userId, content },
     include: { sender: { select: { id: true, username: true, avatarUrl: true } } },
   });
+  const payload = { ...message, receiverId: friendId, senderId: userId };
+  req.app.get('io')?.to(`user_${friendId}`).emit('receive_direct_message', payload);
+  req.app.get('io')?.to(`user_${userId}`).emit('receive_direct_message', payload);
   res.status(201).json(message);
 });
 

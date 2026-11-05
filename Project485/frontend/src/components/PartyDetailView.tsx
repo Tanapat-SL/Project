@@ -11,6 +11,11 @@ export default function PartyDetailView() {
   const [currentUser, setCurrentUser] = useState<any>(null);
   const [joinStatus, setJoinStatus] = useState<'NONE' | 'PENDING' | 'ACCEPTED'>('NONE');
   const [joinRequests, setJoinRequests] = useState<any[]>([]);
+  const [showEdit, setShowEdit] = useState(false);
+  const [editTitle, setEditTitle] = useState('');
+  const [editDescription, setEditDescription] = useState('');
+  const [editMaxMembers, setEditMaxMembers] = useState(5);
+  const [editMicRequired, setEditMicRequired] = useState(false);
 
   useEffect(() => {
     if (!id) return;
@@ -107,6 +112,37 @@ export default function PartyDetailView() {
       navigate('/');
     } catch {
       setStatus('Only the party owner can delete this party.');
+    }
+  };
+
+  const openEdit = () => {
+    if (!partyData) return;
+    setEditTitle(partyData.title || '');
+    setEditDescription(partyData.description || '');
+    setEditMaxMembers(partyData.maxMembers || 5);
+    setEditMicRequired(Boolean(partyData.micRequired));
+    setShowEdit(true);
+  };
+
+  const saveEdit = async (event: React.FormEvent) => {
+    event.preventDefault();
+    try {
+      await apiClient.patch(`/parties/${id}`, { title: editTitle, description: editDescription, maxMembers: editMaxMembers, micRequired: editMicRequired });
+      const { data } = await apiClient.get(`/parties/${id}`);
+      setPartyData(data);
+      setShowEdit(false);
+      setStatus('Party post updated.');
+    } catch (error: any) {
+      setStatus(error.response?.data?.message || 'Could not update party.');
+    }
+  };
+
+  const bumpParty = async () => {
+    try {
+      const { data } = await apiClient.post(`/parties/${id}/bump`);
+      setStatus(data.message);
+    } catch (error: any) {
+      setStatus(error.response?.data?.message || 'Could not bump party.');
     }
   };
 
@@ -207,7 +243,11 @@ export default function PartyDetailView() {
 
               <div className="mt-6 pt-4 border-t border-gray-700">
                 {currentUser?.id === partyData?.owner?.id && (
-                  <button onClick={() => void deleteParty()} className="w-full mb-3 border border-red-500/50 text-red-300 py-2.5 rounded-lg text-sm">Delete Party</button>
+                  <>
+                    <button onClick={openEdit} className="w-full mb-3 border border-mf-primary/50 text-mf-primary py-2.5 rounded-lg text-sm">Edit Party Post</button>
+                    <button onClick={() => void bumpParty()} className="w-full mb-3 border border-yellow-500/50 text-yellow-300 py-2.5 rounded-lg text-sm">Bump Party Post</button>
+                    <button onClick={() => void deleteParty()} className="w-full mb-3 border border-red-500/50 text-red-300 py-2.5 rounded-lg text-sm">Delete Party</button>
+                  </>
                 )}
                 {currentUser?.id !== partyData?.owner?.id && (
                   <button onClick={() => void sendFriendRequest()} className="w-full mb-3 border border-mf-primary/50 text-mf-primary py-2.5 rounded-lg text-sm">Add Friend</button>
@@ -229,6 +269,21 @@ export default function PartyDetailView() {
                           <button onClick={() => void reviewJoinRequest(request.userId, 'ACCEPTED')} className="bg-green-500/20 text-green-300 border border-green-500/30 rounded-lg py-2 text-xs">Accept</button>
                           <button onClick={() => void reviewJoinRequest(request.userId, 'REJECTED')} className="bg-red-500/20 text-red-300 border border-red-500/30 rounded-lg py-2 text-xs">Reject</button>
                         </div>
+                        {showEdit && (
+                          <div className="fixed inset-0 z-[80] flex items-center justify-center bg-black/75 p-4" onMouseDown={event => { if (event.target === event.currentTarget) setShowEdit(false); }}>
+                            <form onSubmit={saveEdit} className="glass-panel w-full max-w-lg space-y-4 p-6">
+                              <div className="flex items-center justify-between"><h3 className="text-xl font-bold text-white">Edit Party Post</h3><button type="button" onClick={() => setShowEdit(false)} className="text-gray-400">×</button></div>
+                              <input required maxLength={100} value={editTitle} onChange={event => setEditTitle(event.target.value)} className="w-full rounded-lg border border-gray-700 bg-gray-800 p-3 text-white" />
+                              <textarea required maxLength={1000} value={editDescription} onChange={event => setEditDescription(event.target.value)} className="min-h-28 w-full rounded-lg border border-gray-700 bg-gray-800 p-3 text-white" />
+                              <div className="flex items-center justify-between gap-4">
+                                <label className="text-gray-300">Maximum members</label>
+                                <input type="number" min="2" max="20" value={editMaxMembers} onChange={event => setEditMaxMembers(Number(event.target.value))} className="w-24 rounded-lg border border-gray-700 bg-gray-800 p-2 text-white" />
+                              </div>
+                              <label className="flex items-center gap-2 text-gray-300"><input type="checkbox" checked={editMicRequired} onChange={event => setEditMicRequired(event.target.checked)} /> Mic required</label>
+                              <button type="submit" className="w-full rounded-lg bg-mf-primary py-3 font-bold text-white">Save Changes</button>
+                            </form>
+                          </div>
+                        )}
                       </div>
                     ))}
                   </div>
