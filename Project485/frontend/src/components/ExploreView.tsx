@@ -1,8 +1,15 @@
 import React, { useEffect, useState } from 'react';
-import { Users, Mic, Plus, ChevronRight, X, Sparkles, Search } from 'lucide-react';
+import { Users, Mic, Plus, ChevronRight, X, Sparkles, Search, Radio, Trophy, Gamepad2 } from 'lucide-react';
 import { useNavigate } from 'react-router-dom';
 import { apiClient } from '../api/client';
 import { socket } from '../api/socket';
+
+const gameImages: Record<string, string> = {
+  Valorant: 'https://images.unsplash.com/photo-1542751371-adc38448a05e?auto=format&fit=crop&w=900&q=85',
+  'Apex Legends': 'https://images.unsplash.com/photo-1538481199705-c710c4e965fc?auto=format&fit=crop&w=900&q=85',
+  CS2: 'https://images.unsplash.com/photo-1598550476439-6847785fcea6?auto=format&fit=crop&w=900&q=85',
+  'Overwatch 2': 'https://images.unsplash.com/photo-1511512578047-dfb367046420?auto=format&fit=crop&w=900&q=85'
+};
 
 export default function ExploreView() {
   const navigate = useNavigate();
@@ -99,31 +106,63 @@ export default function ExploreView() {
     }
   };
 
+  const sendFriendRequest = async (userId: number) => {
+    try {
+      await apiClient.post('/friends/requests', { userId });
+      setPlayerResults(current => current.map(player => player.id === userId ? { ...player, friendRequested: true } : player));
+    } catch (error: any) {
+      alert(error.response?.data?.message || 'ส่งคำขอเพิ่มเพื่อนไม่สำเร็จ');
+    }
+  };
+
   return (
-    <div className="max-w-6xl mx-auto animate-in fade-in duration-500 pb-20">
-      <div className="flex flex-col md:flex-row justify-between items-start md:items-center mb-10 gap-4">
-        <div>
-          <h2 className="text-3xl font-bold text-white mb-2">LFG Board</h2>
-          <p className="text-gray-400">Find your perfect squad and rank up together.</p>
+    <div className="mx-auto max-w-[1180px] animate-in fade-in duration-500 pb-20">
+      <section className="relative mb-6 min-h-[230px] overflow-hidden rounded-[28px] border border-white/[0.08] bg-[#171b26] shadow-2xl shadow-black/30">
+        <img src="https://images.unsplash.com/photo-1542751371-adc38448a05e?auto=format&fit=crop&w=1600&q=85" alt="" className="absolute inset-0 h-full w-full object-cover opacity-35" />
+        <div className="absolute inset-0 bg-gradient-to-r from-[#11151f] via-[#11151f]/85 to-[#11151f]/10" />
+        <div className="absolute -right-16 top-0 h-full w-2/3 bg-gradient-to-l from-orange-500/25 via-transparent to-transparent" />
+        <div className="relative flex min-h-[230px] flex-col justify-between gap-8 p-6 md:p-8">
+          <div>
+            <div className="mb-5 flex items-center gap-2 text-xs font-bold uppercase tracking-[0.24em] text-[#ff7549]">
+              <span className="h-2 w-2 rounded-full bg-[#ff7549] shadow-[0_0_12px_#ff7549]" />
+              Matchfound Dashboard
+            </div>
+            <h2 className="max-w-xl text-3xl font-black leading-tight text-white md:text-5xl">Find your squad.<br />Own the game.</h2>
+            <p className="mt-4 max-w-lg text-sm leading-6 text-gray-300 md:text-base">ค้นหาทีม เล่นเกม และพบเพื่อนที่ตรงกับสไตล์การเล่นของคุณ</p>
+          </div>
+          <button onClick={() => setShowCreate(true)} className="absolute bottom-7 right-7 flex items-center gap-2 rounded-xl bg-[#ff6035] px-5 py-3 font-bold text-white shadow-xl shadow-orange-950/40 transition hover:-translate-y-0.5 hover:bg-[#ff754f]">
+            <Plus className="h-5 w-5" /> สร้างห้องเล่น
+          </button>
         </div>
-        <button onClick={() => setShowCreate(true)} className="flex items-center gap-2 bg-gradient-to-r from-mf-primary to-mf-secondary hover:opacity-90 px-6 py-3 rounded-xl font-semibold text-white shadow-lg shadow-mf-primary/20 transition-all">
-          <Plus className="w-5 h-5" /> Create Party
-        </button>
+      </section>
+
+      <div className="mb-6 grid gap-3 sm:grid-cols-2 xl:grid-cols-4">
+        {games.map((item) => (
+          <button key={item.id} onClick={() => { setGame(item.name); setRank(''); loadParties(item.name, region, ''); }} className={`relative h-28 overflow-hidden rounded-2xl border text-left transition hover:-translate-y-1 ${game === item.name ? 'border-orange-400' : 'border-white/[0.08]'}`}>
+            <img src={item.imageUrl || gameImages[item.name] || gameImages.Valorant} alt={`${item.name} party`} className="absolute inset-0 h-full w-full object-cover opacity-55" />
+            <div className="absolute inset-0 bg-gradient-to-r from-[#11151f] via-[#11151f]/70 to-transparent" />
+            <div className="relative flex h-full flex-col justify-end p-4">
+              <span className="text-lg font-bold text-white">{item.name}</span>
+              <span className="mt-1 text-xs text-gray-300">Browse parties</span>
+            </div>
+          </button>
+        ))}
       </div>
 
-      <div className="flex gap-4 mb-8 overflow-x-auto pb-2 scrollbar-hide">
-        <select value={game} onChange={(event) => { const nextGame = event.target.value; setGame(nextGame); setRank(''); loadParties(nextGame, region, ''); }} className="bg-mf-card border border-gray-700 text-white px-4 py-2.5 rounded-lg focus:outline-none focus:border-mf-primary">
+      <div className="mb-6 grid grid-cols-1 gap-3 rounded-2xl border border-white/[0.07] bg-[#141924] p-3 md:grid-cols-[1fr_1fr_1fr_auto]">
+        <select value={game} onChange={(event) => { const nextGame = event.target.value; setGame(nextGame); setRank(''); loadParties(nextGame, region, ''); }} className="bg-[#1d2230] border border-white/[0.08] text-white px-4 py-3 rounded-xl focus:outline-none focus:border-orange-500">
           <option value="">All Games</option>
           {games.map(item => <option key={item.id} value={item.name}>{item.name}</option>)}
         </select>
-        <select value={rank} onChange={event => { const nextRank = event.target.value; setRank(nextRank); loadParties(game, region, nextRank); }} className="bg-mf-card border border-gray-700 text-white px-4 py-2.5 rounded-lg focus:outline-none focus:border-mf-primary">
+        <select value={rank} onChange={event => { const nextRank = event.target.value; setRank(nextRank); loadParties(game, region, nextRank); }} className="bg-[#1d2230] border border-white/[0.08] text-white px-4 py-3 rounded-xl focus:outline-none focus:border-orange-500">
           <option value="">Any Rank</option>
           {(games.find(item => item.name === game)?.ranks || []).map((item: string) => <option key={item} value={item}>{item}</option>)}
         </select>
-        <select value={region} onChange={event => { const nextRegion = event.target.value; setRegion(nextRegion); loadParties(game, nextRegion, rank); }} className="bg-mf-card border border-gray-700 text-white px-4 py-2.5 rounded-lg focus:outline-none focus:border-mf-primary">
+        <select value={region} onChange={event => { const nextRegion = event.target.value; setRegion(nextRegion); loadParties(game, nextRegion, rank); }} className="bg-[#1d2230] border border-white/[0.08] text-white px-4 py-3 rounded-xl focus:outline-none focus:border-orange-500">
           <option value="">Any Region</option>
           {['Asia', 'Europe', 'North America', 'South America', 'Oceania', 'Middle East', 'Africa'].map(item => <option key={item}>{item}</option>)}
         </select>
+        <button type="button" onClick={() => { setGame(''); setRank(''); setRegion(''); loadParties('', '', ''); }} className="rounded-xl px-5 py-3 text-sm font-semibold text-gray-300 hover:bg-white/[0.05] hover:text-white">Clear</button>
       </div>
 
       <form onSubmit={searchPlayers} className="glass-panel p-4 mb-6 flex flex-col sm:flex-row gap-3">
@@ -134,10 +173,21 @@ export default function ExploreView() {
       {playerResults.length > 0 && (
         <div className="glass-panel mb-8 p-4 grid gap-3 sm:grid-cols-2 lg:grid-cols-3">
           {playerResults.map(player => (
-            <button key={player.id} onClick={() => navigate(`/profile/${player.id}`)} className="flex items-center gap-3 rounded-lg border border-gray-700 bg-gray-900/60 p-3 text-left hover:border-mf-primary/50">
-              <div className="grid h-10 w-10 place-items-center rounded-full bg-mf-primary/20 font-bold text-mf-primary">{(player.displayName || player.username || '?').slice(0, 2).toUpperCase()}</div>
-              <div className="min-w-0"><p className="truncate font-semibold text-white">{player.displayName || player.username}</p><p className="truncate text-xs text-gray-400">@{player.username}</p></div>
-            </button>
+            <div key={player.id} className="rounded-xl border border-gray-700 bg-gray-900/60 p-3">
+              <button onClick={() => navigate(`/profile/${player.id}`)} className="flex w-full items-center gap-3 text-left">
+                <div className="grid h-10 w-10 shrink-0 place-items-center rounded-full bg-mf-primary/20 font-bold text-mf-primary">{(player.displayName || player.username || '?').slice(0, 2).toUpperCase()}</div>
+                <div className="min-w-0"><p className="truncate font-semibold text-white">{player.displayName || player.username}</p><p className="truncate text-xs text-gray-400">@{player.username}</p></div>
+              </button>
+              {!!player.games?.length && <p className="mt-3 truncate text-xs text-gray-400"><span className="text-gray-500">เล่น:</span> {player.games.map((item: any) => item.name).join(' · ')}</p>}
+              {player.activeParty && (
+                <button onClick={() => navigate(`/party/${player.activeParty.id}`)} className="mt-2 w-full truncate rounded-lg border border-orange-400/20 bg-orange-500/10 px-2 py-1.5 text-left text-xs text-orange-300">
+                  In party: {player.activeParty.title}
+                </button>
+              )}
+              <button onClick={() => void sendFriendRequest(player.id)} disabled={player.friendRequested} className="mt-3 w-full rounded-lg border border-mf-primary/30 bg-mf-primary/10 py-2 text-xs font-semibold text-mf-primary disabled:text-gray-500">
+                {player.friendRequested ? 'Request Sent' : 'Add Friend'}
+              </button>
+            </div>
           ))}
         </div>
       )}

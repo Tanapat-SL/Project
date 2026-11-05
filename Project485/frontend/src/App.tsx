@@ -1,6 +1,6 @@
 import React, { useState, useEffect } from 'react';
 import { BrowserRouter, Routes, Route, Link, useLocation, Navigate } from 'react-router-dom';
-import { Search, MessageSquare, User, Gamepad2, Settings, LogOut, Bell } from 'lucide-react';
+import { Search, MessageSquare, User, Gamepad2, Settings, LogOut, Bell, Users } from 'lucide-react';
 import axios from 'axios';
 import { apiClient } from './api/client';
 import { socket } from './api/socket';
@@ -10,6 +10,7 @@ import ChatView from './components/ChatView';
 import ProfileView from './components/ProfileView';
 import PartyDetailView from './components/PartyDetailView';
 import NotificationsView from './components/NotificationsView';
+import FriendsView from './components/FriendsView';
 
 import SettingsView from './components/SettingsView';
 import { LandingPage, LoginPage, type Language } from './components/LandingPages';
@@ -24,7 +25,7 @@ function MainLayout() {
   const currentPath = location.pathname;
 
   useEffect(() => {
-    document.documentElement.dataset.theme = localStorage.getItem('mf_theme') || 'light';
+    document.documentElement.dataset.theme = localStorage.getItem('mf_theme') || 'dark';
     const handleConnect = () => setConnectionState('online');
     const handleDisconnect = () => setConnectionState('connecting');
     const handleConnectionError = () => setConnectionState('offline');
@@ -84,7 +85,7 @@ function MainLayout() {
   return (
     <div className="min-h-screen flex bg-mf-dark">
       {/* Sidebar Navigation */}
-      <nav className="w-20 lg:w-64 glass-panel border-l-0 border-y-0 rounded-none border-r flex flex-col justify-between p-4 sticky top-0 h-screen z-50">
+      <nav className="w-20 lg:w-60 border-r border-white/[0.07] bg-[#10141d] flex flex-col justify-between p-4 sticky top-0 h-screen z-50">
         <div>
           <a href="/" aria-label="MATCHFOUND home and refresh" className="flex items-center justify-center lg:justify-start gap-3 mb-10 px-2 rounded-lg focus:outline-none focus-visible:ring-2 focus-visible:ring-mf-primary">
             <div className="w-10 h-10 rounded-xl bg-gradient-to-br from-mf-primary to-mf-secondary flex items-center justify-center shadow-lg shadow-mf-primary/20 shrink-0">
@@ -104,6 +105,9 @@ function MainLayout() {
             </Link>
             <Link to="/notifications">
               <NavButton icon={<Bell />} label="Notifications" active={currentPath === '/notifications'} badge={notificationCount ? String(notificationCount) : undefined} />
+            </Link>
+            <Link to="/friends">
+              <NavButton icon={<Users />} label="Friends" active={currentPath === '/friends'} />
             </Link>
           </div>
         </div>
@@ -141,7 +145,7 @@ function MainLayout() {
       </nav>
 
       {/* Main Content Area */}
-      <main className="flex-1 p-4 md:p-6 lg:p-10 h-screen overflow-y-auto">
+      <main className="flex-1 bg-[#090d16] p-4 md:p-6 lg:p-10 h-screen overflow-y-auto">
         <Routes>
           <Route path="/" element={<ExploreView />} />
           <Route path="/chat" element={<ChatView currentUser={currentUser} />} />
@@ -150,6 +154,7 @@ function MainLayout() {
           <Route path="/party/:id" element={<PartyDetailView />} />
           <Route path="/matchmaker" element={<Navigate to="/" replace />} />
           <Route path="/notifications" element={<NotificationsView />} />
+          <Route path="/friends" element={<FriendsView />} />
           <Route path="/settings" element={<SettingsView />} />
         </Routes>
       </main>
@@ -216,7 +221,7 @@ function AppEntry() {
 function NavButton({ icon, label, active = false, badge }: { icon: React.ReactNode, label: string, active?: boolean, badge?: string }) {
   return (
     <div className={`w-full flex items-center justify-center lg:justify-start gap-3 p-3 rounded-xl transition-all relative
-      ${active ? 'bg-mf-primary/10 text-white' : 'text-gray-400 hover:bg-gray-800/50 hover:text-white'}
+      ${active ? 'bg-[#ff5b2d] text-white shadow-lg shadow-orange-950/30' : 'text-gray-400 hover:bg-white/[0.05] hover:text-white'}
     `}>
       <div className={`${active ? 'text-mf-primary' : ''}`}>
         {icon}

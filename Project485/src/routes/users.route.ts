@@ -67,9 +67,25 @@ router.get('/search', authenticate, async (req, res) => {
         },
       },
     },
-    select: { id: true, username: true, displayName: true, avatarUrl: true, bio: true },
+    select: {
+      id: true,
+      username: true,
+      displayName: true,
+      avatarUrl: true,
+      bio: true,
+      games: { select: { game: { select: { id: true, name: true } } } },
+      partyMemberships: {
+        where: { status: 'ACCEPTED', party: { status: 'OPEN' } },
+        take: 1,
+        select: { party: { select: { id: true, title: true, game: { select: { name: true } } } } },
+      },
+    },
   });
-  res.json(users);
+  res.json(users.map(user => ({
+    ...user,
+    games: user.games.map(item => item.game),
+    activeParty: user.partyMemberships[0]?.party || null,
+  })));
 });
 
 router.get('/:id', authenticate, async (req, res) => {
@@ -103,10 +119,15 @@ router.get('/:id', authenticate, async (req, res) => {
         },
       },
       availability: { select: { dayOfWeek: true, startTime: true, endTime: true } },
+      partyMemberships: {
+        where: { status: 'ACCEPTED', party: { status: 'OPEN' } },
+        take: 1,
+        select: { party: { select: { id: true, title: true, game: { select: { id: true, name: true } } } } },
+      },
     },
   });
   if (!user) return res.status(404).json({ message: 'User not found' });
-  res.json(user);
+  res.json({ ...user, activeParty: user.partyMemberships[0]?.party || null });
 });
 
 export default router;

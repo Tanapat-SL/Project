@@ -28,6 +28,13 @@ export default function NotificationsView() {
     await markRead(item.id);
   };
 
+  const rejectFriend = async (item: any) => {
+    const requestId = item.payload?.requestId;
+    if (!requestId) return;
+    await apiClient.patch(`/friends/requests/${requestId}`, { status: 'REJECTED' });
+    await markRead(item.id);
+  };
+
   const reviewPartyRequest = async (item: any, status: 'ACCEPTED' | 'REJECTED') => {
     await apiClient.patch(`/parties/${item.payload.partyId}/members/${item.payload.requesterId}`, { status });
     await markRead(item.id);
@@ -50,7 +57,10 @@ export default function NotificationsView() {
             {!item.readAt && (
               <div className="flex gap-2">
                 {item.type === 'FRIEND_REQUEST' && (
-                  <button onClick={() => void acceptFriend(item)} className="bg-mf-primary px-3 py-2 rounded-lg text-white text-sm">Accept Friend</button>
+                  <>
+                    <button onClick={() => void acceptFriend(item)} className="bg-green-500 px-3 py-2 rounded-lg text-white text-sm font-semibold">Accept</button>
+                    <button onClick={() => void rejectFriend(item)} className="border border-red-400/30 bg-red-500/10 px-3 py-2 rounded-lg text-red-300 text-sm">Decline</button>
+                  </>
                 )}
                 {item.type === 'PARTY_JOIN_REQUEST' && (
                   <>

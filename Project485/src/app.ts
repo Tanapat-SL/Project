@@ -7,6 +7,7 @@ import gamesRoutes from './routes/games.route';
 import partiesRoutes from './routes/parties.route';
 import aiRoutes from './routes/ai.route';
 import safetyRoutes from './routes/safety.route';
+import friendsRoutes from './routes/friends.route';
 
 const app = express();
 app.use(cors());
@@ -19,6 +20,7 @@ app.use('/api/chat', chatRoutes);
 app.use('/api/games', gamesRoutes);
 app.use('/api/parties', partiesRoutes);
 app.use('/api/ai', aiRoutes);
+app.use('/api/friends', friendsRoutes);
 app.use('/api', safetyRoutes);
 
 export default app;

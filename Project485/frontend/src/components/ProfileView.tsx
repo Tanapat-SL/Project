@@ -1,6 +1,6 @@
 import React, { useEffect, useState } from 'react';
 import { useNavigate, useParams } from 'react-router-dom';
-import { User, Shield, Gamepad2, Edit3, X, Save, Plus, Trash2 } from 'lucide-react';
+import { User, Shield, Gamepad2, Edit3, X, Save, Plus, Trash2, UserPlus, UserCheck, Clock3 } from 'lucide-react';
 import { apiClient } from '../api/client';
 
 type GameProfile = {
@@ -39,12 +39,19 @@ export default function ProfileView() {
   const [profile, setProfile] = useState<any>({ languages: [], games: [] });
   const [gameDrafts, setGameDrafts] = useState<GameProfile[]>([]);
   const [newGameId, setNewGameId] = useState('');
+  const [friendStatus, setFriendStatus] = useState<{ status: string; requestId?: number }>({ status: 'NONE' });
 
   const loadProfile = async () => {
     if (userId) {
       const { data: user } = await apiClient.get(`/users/${userId}`);
       setProfile(user);
       setGameDrafts([]);
+      try {
+        const { data } = await apiClient.get(`/friends/status/${userId}`);
+        setFriendStatus(data);
+      } catch {
+        setFriendStatus({ status: 'NONE' });
+      }
       return;
     }
     const [{ data: user }, { data: games }] = await Promise.all([
@@ -123,6 +130,20 @@ export default function ProfileView() {
   };
 
   const styleLabel = (value: string) => playStyles.find(style => style.value === value)?.label || value;
+  const sendFriendRequest = async () => {
+    try {
+      await apiClient.post('/friends/requests', { userId: Number(userId) });
+      const { data } = await apiClient.get(`/friends/status/${userId}`);
+      setFriendStatus(data);
+    } catch (error: any) {
+      alert(error.response?.data?.message || 'ส่งคำขอเพิ่มเพื่อนไม่สำเร็จ');
+    }
+  };
+  const respondFriendRequest = async (status: 'ACCEPTED' | 'REJECTED') => {
+    if (!friendStatus.requestId) return;
+    await apiClient.patch(`/friends/requests/${friendStatus.requestId}`, { status });
+    setFriendStatus({ status: status === 'ACCEPTED' ? 'FRIENDS' : 'NONE' });
+  };
 
   return (
     <div className="max-w-4xl mx-auto animate-in fade-in duration-500 pb-20">
@@ -146,6 +167,21 @@ export default function ProfileView() {
           {isOwnProfile && <button onClick={startEditing} className="flex items-center justify-center gap-2 bg-gray-800 hover:bg-gray-700 border border-gray-700 px-4 py-2 rounded-lg text-sm transition-colors">
             <Edit3 className="w-4 h-4" /> Edit Profile
           </button>}
+          {!isOwnProfile && friendStatus.status === 'NONE' && (
+            <button onClick={() => void sendFriendRequest()} className="flex items-center gap-2 rounded-lg bg-[#ff6035] px-4 py-2 text-sm font-semibold text-white"><UserPlus className="w-4 h-4" /> Add Friend</button>
+          )}
+          {!isOwnProfile && friendStatus.status === 'REQUESTED' && (
+            <button disabled className="flex items-center gap-2 rounded-lg border border-white/10 bg-gray-800 px-4 py-2 text-sm text-gray-300"><Clock3 className="w-4 h-4" /> Request Sent</button>
+          )}
+          {!isOwnProfile && friendStatus.status === 'FRIENDS' && (
+            <button disabled className="flex items-center gap-2 rounded-lg border border-green-500/30 bg-green-500/10 px-4 py-2 text-sm text-green-300"><UserCheck className="w-4 h-4" /> Friends</button>
+          )}
+          {!isOwnProfile && friendStatus.status === 'INCOMING' && (
+            <div className="flex gap-2">
+              <button onClick={() => void respondFriendRequest('ACCEPTED')} className="rounded-lg bg-green-500 px-3 py-2 text-sm font-semibold text-white">Accept</button>
+              <button onClick={() => void respondFriendRequest('REJECTED')} className="rounded-lg border border-red-400/30 bg-red-500/10 px-3 py-2 text-sm text-red-300">Decline</button>
+            </div>
+          )}
         </div>
       </div>
 
@@ -157,6 +193,13 @@ export default function ProfileView() {
             <div className="mt-6 space-y-4">
               <div><span className="text-xs text-gray-500 uppercase font-semibold">Playstyle</span><p className="text-white">{profile.games?.length ? [...new Set(profile.games.map((item: any) => styleLabel(item.playStyle)))].join(' / ') : 'Not set'}</p></div>
               <div><span className="text-xs text-gray-500 uppercase font-semibold">Discord</span><p className="text-mf-primary font-medium break-all">{profile.username || 'Unknown Discord user'}</p></div>
+              {profile.activeParty && (
+                <button onClick={() => navigate(`/party/${profile.activeParty.id}`)} className="mt-2 w-full rounded-xl border border-orange-400/30 bg-orange-500/10 p-3 text-left">
+                  <span className="text-xs font-semibold uppercase text-orange-300">Currently in party</span>
+                  <p className="mt-1 font-bold text-white">{profile.activeParty.title}</p>
+                  <p className="text-xs text-gray-400">{profile.activeParty.game?.name}</p>
+                </button>
+              )}
             </div>
           </div>
         </div>

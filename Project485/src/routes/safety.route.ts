@@ -51,64 +51,6 @@ router.delete('/blocks/:userId', authenticate, async (req, res) => {
   res.status(204).send();
 });
 
-router.post('/friends/requests', authenticate, async (req, res) => {
-  const requesterId = (req as any).user.userId;
-  const receiverId = Number(req.body.userId);
-  if (!receiverId || receiverId === requesterId) return res.status(400).json({ message: 'Invalid userId' });
-  const request = await prisma.friendRequest.upsert({
-    where: { requesterId_receiverId: { requesterId, receiverId } },
-    update: { status: 'PENDING' },
-    create: { requesterId, receiverId },
-  });
-  await prisma.notification.create({
-    data: { userId: receiverId, type: 'FRIEND_REQUEST', payload: { requesterId, requestId: request.id } },
-  });
-  res.status(201).json(request);
-});
-
-router.get('/friends', authenticate, async (req, res) => {
-  const userId = (req as any).user.userId;
-  const blocks = await prisma.userBlock.findMany({
-    where: { OR: [{ blockerId: userId }, { blockedId: userId }] },
-    select: { blockerId: true, blockedId: true },
-  });
-  const blockedUserIds = new Set(blocks.map(block => block.blockerId === userId ? block.blockedId : block.blockerId));
-  const requests = await prisma.friendRequest.findMany({
-    where: { status: 'ACCEPTED', OR: [{ requesterId: userId }, { receiverId: userId }] },
-    include: {
-      requester: { select: { id: true, username: true, displayName: true, avatarUrl: true } },
-      receiver: { select: { id: true, username: true, displayName: true, avatarUrl: true } },
-    },
-  });
-  res.json(requests
-    .map(request => request.requesterId === userId ? request.receiver : request.requester)
-    .filter(friend => !blockedUserIds.has(friend.id)));
-});
-
-router.get('/friends/requests', authenticate, async (req, res) => {
-  const requests = await prisma.friendRequest.findMany({
-    where: { receiverId: (req as any).user.userId, status: 'PENDING' },
-    include: { requester: { select: { id: true, username: true, displayName: true, avatarUrl: true } } },
-    orderBy: { createdAt: 'desc' },
-  });
-  res.json(requests);
-});
-
-router.patch('/friends/requests/:id', authenticate, async (req, res) => {
-  const userId = (req as any).user.userId;
-  const status = String(req.body.status).toUpperCase();
-  if (!['ACCEPTED', 'REJECTED'].includes(status)) return res.status(400).json({ message: 'Invalid status' });
-  const request = await prisma.friendRequest.findFirst({ where: { id: Number(req.params.id), receiverId: userId } });
-  if (!request) return res.status(404).json({ message: 'Friend request not found' });
-  const updated = await prisma.friendRequest.update({ where: { id: request.id }, data: { status } as any });
-  if (status === 'ACCEPTED') {
-    await prisma.notification.create({
-      data: { userId: request.requesterId, type: 'FRIEND_REQUEST_ACCEPTED', payload: { userId } },
-    });
-  }
-  res.json(updated);
-});
-
 router.post('/reports', authenticate, async (req, res) => {
   const reporterId = (req as any).user.userId;
   const { targetUserId, reason } = req.body;
