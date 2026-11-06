@@ -51,17 +51,20 @@ export default function FriendsView() {
   const [addSearchLoading, setAddSearchLoading] = useState(false);
   const [addSearchError, setAddSearchError] = useState<string | null>(null);
   const [sentRequests, setSentRequests] = useState<Set<number>>(new Set());
+  const [currentUserId, setCurrentUserId] = useState<number | null>(null);
 
   const loadAll = useCallback(async () => {
     setLoading(true);
     setError(null);
     try {
-      const [friendsRes, requestsRes] = await Promise.all([
+      const [friendsRes, requestsRes, meRes] = await Promise.all([
         apiClient.get<FriendUser[]>('/friends'),
         apiClient.get<FriendRequest[]>('/friends/requests'),
+        apiClient.get<{ id: number }>('/auth/me'),
       ]);
       setFriends(friendsRes.data);
       setRequests(requestsRes.data);
+      setCurrentUserId(Number(meRes.data.id));
     } catch {
       setError('ไม่สามารถโหลดข้อมูลได้ กรุณาลองใหม่');
     } finally {
@@ -106,9 +109,10 @@ export default function FriendsView() {
     setAddSearchError(null);
     try {
       const res = await apiClient.get<SearchedUser[]>(`/users/search?q=${encodeURIComponent(q)}`);
+      const otherUsers = res.data.filter(user => user.id !== currentUserId);
       // ตรวจสอบ status เพื่อน
       const withStatus = await Promise.all(
-        res.data.map(async (u) => {
+        otherUsers.map(async (u) => {
           try {
             const s = await apiClient.get<{ status: SearchedUser['friendStatus'] }>(`/friends/status/${u.id}`);
             return { ...u, friendStatus: s.data.status };
@@ -127,9 +131,10 @@ export default function FriendsView() {
 
   // ─── ส่งคำขอเพิ่มเพื่อน ───────────────────────────────────────
   const handleSendRequest = async (userId: number) => {
+    if (userId === currentUserId) return;
     setActionBusy(userId);
     try {
-      await apiClient.post('/friends/requests', { receiverId: userId });
+      await apiClient.post('/friends/requests', { userId });
       setSentRequests(prev => new Set(prev).add(userId));
       setAddSearchResults(prev =>
         prev.map(u => u.id === userId ? { ...u, friendStatus: 'pending_sent' } : u)
@@ -220,10 +225,11 @@ export default function FriendsView() {
                   <button
                     onClick={() => handleRemove(friend.id, friend.displayName || friend.username)}
                     disabled={actionBusy === friend.id}
-                    className="p-2 text-gray-500 hover:text-red-400 hover:bg-red-500/10 rounded-lg transition-colors disabled:opacity-40"
+                    className="flex shrink-0 items-center gap-2 rounded-lg border border-red-500/20 px-3 py-2 text-sm text-gray-400 transition-colors hover:border-red-500/40 hover:bg-red-500/10 hover:text-red-300 disabled:opacity-40"
                     title="ลบเพื่อน"
                   >
-                    <Trash2 className="w-4 h-4" />
+                    <Trash2 className="h-4 w-4" />
+                    <span>{actionBusy === friend.id ? 'กำลังลบ...' : 'ลบเพื่อน'}</span>
                   </button>
                 </li>
               ))}

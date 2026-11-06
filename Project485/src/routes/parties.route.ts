@@ -216,4 +216,34 @@ router.patch('/:id/members/:userId', authenticate, async (req, res) => {
   res.json(member);
 });
 
+router.post('/:id/members/:userId/kick', authenticate, async (req, res) => {
+  const ownerId = (req as any).user.userId;
+  const partyId = Number(req.params.id);
+  const targetUserId = Number(req.params.userId);
+  if (!Number.isInteger(partyId) || partyId < 1 || !Number.isInteger(targetUserId) || targetUserId < 1) {
+    return res.status(400).json({ message: 'Invalid party or user ID' });
+  }
+  const party = await prisma.party.findUnique({ where: { id: partyId } });
+  if (!party) return res.status(404).json({ message: 'Party not found' });
+  if (party.ownerId !== ownerId) return res.status(403).json({ message: 'Only the party owner can kick members' });
+  if (targetUserId === party.ownerId) return res.status(400).json({ message: 'The party owner cannot be kicked' });
+
+  const member = await prisma.partyMember.findUnique({ where: { partyId_userId: { partyId, userId: targetUserId } } });
+  if (!member || member.status !== 'ACCEPTED') return res.status(404).json({ message: 'Accepted party member not found' });
+  const updatedMember = await prisma.partyMember.update({
+    where: { partyId_userId: { partyId, userId: targetUserId } },
+    data: { status: 'KICKED' },
+  });
+  const acceptedCount = await prisma.partyMember.count({ where: { partyId, status: 'ACCEPTED' } });
+  await prisma.party.update({
+    where: { id: partyId },
+    data: { status: acceptedCount >= party.maxMembers ? 'FULL' : 'OPEN' },
+  });
+  await prisma.notification.create({
+    data: { userId: targetUserId, type: 'PARTY_REQUEST_REJECTED', payload: { partyId, reason: 'KICKED' } },
+  });
+  req.app.get('io')?.emit('party_updated', { partyId });
+  res.json(updatedMember);
+});
+
 export default router;

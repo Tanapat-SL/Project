@@ -38,7 +38,12 @@ export default function ChatView({ currentUser }: { currentUser: ChatUser | null
   const [chatMode, setChatMode] = useState<'party' | 'direct'>('party');
   const [safetyTarget, setSafetyTarget] = useState<any>(null);
   const [reportReason, setReportReason] = useState('');
+  const [reportCategory, setReportCategory] = useState<'PROFANITY' | 'TOXIC' | 'AFK' | 'DISRUPTION' | 'HARASSMENT'>('TOXIC');
   const [safetyStatus, setSafetyStatus] = useState('');
+  const [chatWarnings, setChatWarnings] = useState(0);
+  const [mutedUntil, setMutedUntil] = useState<string | null>(null);
+  const [clock, setClock] = useState(Date.now());
+  const isChatMuted = Boolean(mutedUntil && new Date(mutedUntil).getTime() > clock);
   const activeContact = chatMode === 'party' ? selectedParty : selectedFriend;
   const canSendMessage = chatMode === 'party' ? Boolean(selectedParty) : Boolean(selectedFriend);
 
@@ -49,8 +54,17 @@ export default function ChatView({ currentUser }: { currentUser: ChatUser | null
     }).catch(() => setParties([]));
     apiClient.get('/friends').then(({ data }) => setFriends(data)).catch(() => setFriends([]));
     apiClient.get('/blocks').then(({ data }) => setBlockedUserIds(data.map((user: ChatUser) => user.id))).catch(() => setBlockedUserIds([]));
-    apiClient.get('/ai/safety/status').then(({ data }) => setSafetyStatus(data.provider === 'openai' ? data.notice : data.notice)).catch(() => undefined);
+    apiClient.get('/chat/status').then(({ data }) => {
+      setChatWarnings(data.warnings || 0);
+      setMutedUntil(data.mutedUntil || null);
+    }).catch(() => undefined);
   }, []);
+
+  useEffect(() => {
+    if (!mutedUntil) return;
+    const timer = window.setInterval(() => setClock(Date.now()), 1000);
+    return () => window.clearInterval(timer);
+  }, [mutedUntil]);
 
   useEffect(() => {
     if (!selectedFriend || chatMode !== 'direct') return;
@@ -92,7 +106,7 @@ export default function ChatView({ currentUser }: { currentUser: ChatUser | null
   }, [messages]);
 
   const sendMessage = async () => {
-    if (!canSendMessage || !content.trim()) return;
+    if (!canSendMessage || isChatMuted || !content.trim()) return;
     const messageText = content.trim();
     setContent('');
     setSafetyStatus('');
@@ -107,15 +121,30 @@ export default function ChatView({ currentUser }: { currentUser: ChatUser | null
       setMessages((current) => [...current.filter((message) => message.id !== data.id), data]);
     } catch (error: any) {
       setContent(messageText);
-      setSafetyStatus(error.response?.data?.message || 'ส่งข้อความไม่สำเร็จ กรุณาลองอีกครั้ง');
+      const response = error.response?.data;
+      if (response?.code === 'PROFANITY_WARNING') {
+        setChatWarnings(response.warnings || 0);
+        setSafetyStatus(response.message);
+      } else if (response?.code === 'CHAT_MUTED') {
+        setChatWarnings(0);
+        setMutedUntil(response.mutedUntil || null);
+        setSafetyStatus(response.message || 'ครบ 3 คำเตือนแล้ว ระงับการแชททุกห้องเป็นเวลา 30 นาที');
+      } else {
+        setSafetyStatus(response?.message || 'ส่งข้อความไม่สำเร็จ กรุณาลองอีกครั้ง');
+      }
     }
   };
 
   const submitSafety = async (action: 'reports' | 'blocks') => {
     if (!safetyTarget) return;
+    if (safetyTarget.id === currentUser?.id) {
+      setSafetyStatus('ไม่สามารถรายงานหรือบล็อกบัญชีตัวเองได้');
+      setSafetyTarget(null);
+      return;
+    }
     try {
       await apiClient.post(`/${action}`, action === 'reports'
-        ? { targetUserId: safetyTarget.id, reason: reportReason.trim() || 'Inappropriate behavior' }
+        ? { targetUserId: safetyTarget.id, category: reportCategory, reason: reportReason.trim() }
         : { userId: safetyTarget.id });
       setSafetyStatus(action === 'reports' ? 'Report submitted.' : 'Player blocked.');
       if (action === 'blocks') {
@@ -129,6 +158,7 @@ export default function ChatView({ currentUser }: { currentUser: ChatUser | null
       }
       setSafetyTarget(null);
       setReportReason('');
+      setReportCategory('TOXIC');
     } catch (error: any) {
       setSafetyStatus(error.response?.data?.message || 'Unable to submit safety action.');
     }
@@ -176,8 +206,8 @@ export default function ChatView({ currentUser }: { currentUser: ChatUser | null
             {selectedParty.members?.map((member: any) => member.user && (
               <div key={member.user.id} className="flex items-center gap-2 p-2 rounded-lg hover:bg-gray-800/50">
                 <Avatar user={member.user} className="h-7 w-7" />
-                <Link to={`/profile/${member.user.id}`} className="min-w-0 flex-1 text-sm text-white truncate hover:text-mf-primary">{member.user.displayName || member.user.username}</Link>
-                <button onClick={() => setSafetyTarget(member.user)} className="text-xs text-gray-400 hover:text-red-300">Report / Block</button>
+                <Link to={member.user.id === currentUser?.id ? '/profile' : `/profile/${member.user.id}`} className="min-w-0 flex-1 text-sm text-white truncate hover:text-mf-primary">{member.user.displayName || member.user.username}</Link>
+                {member.user.id !== currentUser?.id && <button onClick={() => setSafetyTarget(member.user)} className="text-xs text-gray-400 hover:text-red-300">Report / Block</button>}
               </div>
             ))}
           </div>
@@ -215,7 +245,16 @@ export default function ChatView({ currentUser }: { currentUser: ChatUser | null
                   <div className="glass-panel w-full max-w-md p-5">
                     <h3 className="text-lg font-bold text-white mb-1">Player safety</h3>
                     <p className="text-sm text-gray-400 mb-4">{safetyTarget.username}</p>
-                    <textarea value={reportReason} onChange={event => setReportReason(event.target.value)} maxLength={1000} placeholder="Reason for report (optional for block)" className="w-full bg-gray-800 border border-gray-700 rounded-lg p-3 min-h-24 text-white mb-3" />
+                    <label className="mb-3 block text-sm text-gray-300">เหตุผลในการรายงาน
+                      <select value={reportCategory} onChange={event => setReportCategory(event.target.value as typeof reportCategory)} className="mt-2 w-full rounded-lg border border-gray-700 bg-gray-800 p-3 text-white">
+                        <option value="PROFANITY">พิมพ์คำหยาบ</option>
+                        <option value="TOXIC">พฤติกรรม Toxic</option>
+                        <option value="AFK">AFK / ไม่เล่นตามเกม</option>
+                        <option value="DISRUPTION">ก่อกวน</option>
+                        <option value="HARASSMENT">คุกคาม</option>
+                      </select>
+                    </label>
+                    <textarea value={reportReason} onChange={event => setReportReason(event.target.value)} maxLength={1000} placeholder="รายละเอียดเพิ่มเติม (ไม่บังคับ)" className="mb-3 min-h-24 w-full rounded-lg border border-gray-700 bg-gray-800 p-3 text-white" />
                     <div className="grid grid-cols-2 gap-3">
                       <button onClick={() => void submitSafety('reports')} className="border border-yellow-500/40 bg-yellow-500/10 text-yellow-300 py-2.5 rounded-lg">Report</button>
                       <button onClick={() => void submitSafety('blocks')} className="border border-red-500/40 bg-red-500/10 text-red-300 py-2.5 rounded-lg">Block</button>
@@ -231,6 +270,16 @@ export default function ChatView({ currentUser }: { currentUser: ChatUser | null
         </div>
 
         <div className="p-4 border-t border-gray-800 bg-gray-900/50 rounded-b-2xl">
+          {isChatMuted && (
+            <div role="alert" className="mb-3 rounded-xl border border-red-500/30 bg-red-500/10 px-4 py-3 text-sm text-red-200">
+              ระงับการแชททุกห้องถึง {new Date(mutedUntil!).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })} — ใช้ได้ทั้งแชทปาร์ตี้และแชทส่วนตัว
+            </div>
+          )}
+          {!isChatMuted && chatWarnings > 0 && (
+            <div role="status" className="mb-3 rounded-xl border border-amber-500/30 bg-amber-500/10 px-4 py-3 text-sm text-amber-200">
+              คำเตือนการใช้คำหยาบ {chatWarnings}/3 — ข้อความที่มีคำหยาบจะไม่ถูกส่ง
+            </div>
+          )}
           <div className="flex items-center gap-2">
             <input
               type="text"
@@ -238,12 +287,12 @@ export default function ChatView({ currentUser }: { currentUser: ChatUser | null
               value={content}
               onChange={(event) => setContent(event.target.value)}
               onKeyDown={(event) => { if (event.key === 'Enter') void sendMessage(); }}
-              disabled={!canSendMessage}
+              disabled={!canSendMessage || isChatMuted}
               className="flex-1 bg-gray-800 border border-gray-700 rounded-xl py-3 px-4 text-white focus:outline-none focus:border-mf-primary focus:ring-1 focus:ring-mf-primary"
             />
             <button
               onClick={() => void sendMessage()}
-              disabled={!canSendMessage || !content.trim()}
+              disabled={!canSendMessage || isChatMuted || !content.trim()}
               className="p-3 bg-mf-primary hover:bg-mf-primary/80 rounded-xl text-white transition-colors flex-shrink-0 disabled:opacity-50"
             >
               <Send className="w-5 h-5" />

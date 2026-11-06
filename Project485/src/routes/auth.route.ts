@@ -3,6 +3,7 @@ import axios from 'axios';
 import { prisma } from '../lib/prisma';
 import jwt from 'jsonwebtoken';
 import { authenticate } from '../middlewares/auth.middleware';
+import { isAdminUser } from '../middlewares/admin.middleware';
 
 const router = Router();
 
@@ -101,6 +102,9 @@ router.get('/me', authenticate, async (req, res) => {
       where: { id: userId },
       select: {
         id: true,
+        isBanned: true,
+        bannedAt: true,
+        banReason: true,
         username: true,
         displayName: true,
         email: true,
@@ -121,7 +125,7 @@ router.get('/me', authenticate, async (req, res) => {
         },
       }
     });
-    res.json(user);
+    res.json(user ? { ...user, isAdmin: await isAdminUser(userId) } : null);
   } catch (error) {
     res.status(500).json({ message: "Error fetching user data" });
   }

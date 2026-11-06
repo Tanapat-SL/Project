@@ -1,7 +1,8 @@
 import React, { useEffect, useState } from 'react';
 import { useParams, useNavigate, Link } from 'react-router-dom';
-import { Users, Mic, ArrowLeft, Send, ArrowUp } from 'lucide-react';
+import { Users, Mic, ArrowLeft, Send, ArrowUp, UserX } from 'lucide-react';
 import { apiClient } from '../api/client';
+import { getGameArtwork } from '../utils/game-artwork';
 
 export default function PartyDetailView() {
   const { id } = useParams();
@@ -16,6 +17,7 @@ export default function PartyDetailView() {
   const [editDescription, setEditDescription] = useState('');
   const [editMaxMembers, setEditMaxMembers] = useState(5);
   const [editMicRequired, setEditMicRequired] = useState(false);
+  const [kickingId, setKickingId] = useState<number | null>(null);
 
   useEffect(() => {
     if (!id) return;
@@ -71,7 +73,7 @@ export default function PartyDetailView() {
     owner: 'JettMain99', 
     roleNeeded: 'Controller/Sentinel', 
     voice: true, 
-    image: 'https://images.unsplash.com/photo-1623934199716-dc28818a6ec7?q=80&w=1200&auto=format&fit=crop',
+    image: getGameArtwork('Valorant'),
     description: "Looking for 2 more chill people to push rank tonight. We usually play passive on defense and explosive on attack. Please have a working mic and be willing to comm. Don't be toxic.",
     rankReq: 'Immortal 1+',
     members: [
@@ -91,7 +93,7 @@ export default function PartyDetailView() {
     ownerId: partyData.owner?.id,
     roleNeeded: partyData.mode || mockParty.roleNeeded,
     voice: partyData.micRequired,
-    image: mockParty.image,
+    image: partyData.game?.imageUrl || getGameArtwork(partyData.game?.name),
     description: partyData.description || mockParty.description,
     rankReq: partyData.rankMin && partyData.rankMax
       ? `${partyData.rankMin} - ${partyData.rankMax}`
@@ -156,6 +158,21 @@ export default function PartyDetailView() {
     }
   };
 
+  const kickMember = async (member: { id?: number; name: string }) => {
+    if (!member.id || !window.confirm(`ต้องการนำ ${member.name} ออกจากปาร์ตี้ใช่ไหม?`)) return;
+    setKickingId(member.id);
+    try {
+      await apiClient.post(`/parties/${id}/members/${member.id}/kick`);
+      const { data } = await apiClient.get(`/parties/${id}`);
+      setPartyData(data);
+      setStatus(`นำ ${member.name} ออกจากปาร์ตี้แล้ว`);
+    } catch (error: any) {
+      setStatus(error.response?.data?.message || 'นำสมาชิกออกจากปาร์ตี้ไม่สำเร็จ');
+    } finally {
+      setKickingId(null);
+    }
+  };
+
   return (
     <>
       <div className="max-w-4xl mx-auto animate-in fade-in duration-500 pb-20">
@@ -200,7 +217,14 @@ export default function PartyDetailView() {
                       {m.avatarUrl ? <img src={m.avatarUrl} alt={`${m.name} Discord avatar`} className="w-8 h-8 rounded-full object-cover" /> : <div className="w-8 h-8 rounded-full bg-gray-700 flex items-center justify-center text-xs font-bold">{m.name.substring(0, 2).toUpperCase()}</div>}
                       {m.id ? <Link to={`/profile/${m.id}`} className="font-semibold text-white hover:text-mf-primary">{m.name}</Link> : <span className="font-semibold text-white">{m.name}</span>} {m.isOwner && <span className="text-mf-primary text-xs ml-1">(Leader)</span>}
                     </div>
-                    <span className="text-sm text-gray-400">{m.role}</span>
+                    <div className="flex items-center gap-3">
+                      <span className="text-sm text-gray-400">{m.role}</span>
+                      {currentUser?.id === partyData?.owner?.id && !m.isOwner && m.id && (
+                        <button type="button" onClick={() => void kickMember(m)} disabled={kickingId === m.id} className="inline-flex items-center gap-1 rounded-lg border border-red-500/30 px-2.5 py-1.5 text-xs font-semibold text-red-300 transition hover:bg-red-500/10 disabled:opacity-50" title="นำสมาชิกออกจากปาร์ตี้">
+                          <UserX className="h-3.5 w-3.5" />{kickingId === m.id ? 'กำลังนำออก' : 'เตะออก'}
+                        </button>
+                      )}
+                    </div>
                   </div>
                 ))}
                 

@@ -1,15 +1,9 @@
 import React, { useEffect, useState } from 'react';
-import { Users, Mic, Plus, ChevronRight, X, Sparkles, Search, Radio, Trophy, Gamepad2 } from 'lucide-react';
+import { Users, Mic, Plus, ChevronRight, X, Search, Radio, Trophy, Gamepad2 } from 'lucide-react';
 import { useNavigate } from 'react-router-dom';
 import { apiClient } from '../api/client';
 import { socket } from '../api/socket';
-
-const gameImages: Record<string, string> = {
-  Valorant: 'https://images.unsplash.com/photo-1542751371-adc38448a05e?auto=format&fit=crop&w=900&q=85',
-  'Apex Legends': 'https://images.unsplash.com/photo-1538481199705-c710c4e965fc?auto=format&fit=crop&w=900&q=85',
-  CS2: 'https://images.unsplash.com/photo-1598550476439-6847785fcea6?auto=format&fit=crop&w=900&q=85',
-  'Overwatch 2': 'https://images.unsplash.com/photo-1511512578047-dfb367046420?auto=format&fit=crop&w=900&q=85'
-};
+import { getGameArtwork } from '../utils/game-artwork';
 
 export default function ExploreView() {
   const navigate = useNavigate();
@@ -22,12 +16,6 @@ export default function ExploreView() {
   const [region, setRegion] = useState('');
   const [form, setForm] = useState({ gameId: '', title: '', description: '', rankMin: '', rankMax: '', maxMembers: 5, micRequired: true, region: 'Asia' });
   const createGameRanks: string[] = games.find(item => item.id === Number(form.gameId))?.ranks || [];
-  const [aiQuery, setAiQuery] = useState('');
-  const [aiMatches, setAiMatches] = useState<any[]>([]);
-  const [aiLoading, setAiLoading] = useState(false);
-  const [playerQuery, setPlayerQuery] = useState('');
-  const [playerResults, setPlayerResults] = useState<any[]>([]);
-  const [playerLoading, setPlayerLoading] = useState(false);
 
   const loadParties = async (selectedGame = '', selectedRegion = region, selectedRank = rank) => {
     try {
@@ -42,7 +30,7 @@ export default function ExploreView() {
         roleNeeded: party.mode || 'Any role',
         rankReq: [party.rankMin, party.rankMax].filter(Boolean).join(' - ') || 'Any rank',
         voice: party.micRequired,
-        image: party.game.imageUrl || '',
+        image: party.game.imageUrl || getGameArtwork(party.game.name),
       })));
     } catch {
       setParties([]);
@@ -79,42 +67,6 @@ export default function ExploreView() {
     }
   };
 
-  const runAiMatch = async (event: React.FormEvent) => {
-    event.preventDefault();
-    setAiLoading(true);
-    try {
-      const { data } = await apiClient.post('/ai/match-search', { query: aiQuery });
-      setAiMatches(data.matches || []);
-    } catch {
-      setAiMatches([]);
-    } finally {
-      setAiLoading(false);
-    }
-  };
-
-  const searchPlayers = async (event: React.FormEvent) => {
-    event.preventDefault();
-    if (!playerQuery.trim()) return;
-    setPlayerLoading(true);
-    try {
-      const { data } = await apiClient.get('/users/search', { params: { q: playerQuery.trim() } });
-      setPlayerResults(data);
-    } catch {
-      setPlayerResults([]);
-    } finally {
-      setPlayerLoading(false);
-    }
-  };
-
-  const sendFriendRequest = async (userId: number) => {
-    try {
-      await apiClient.post('/friends/requests', { userId });
-      setPlayerResults(current => current.map(player => player.id === userId ? { ...player, friendRequested: true } : player));
-    } catch (error: any) {
-      alert(error.response?.data?.message || 'ส่งคำขอเพิ่มเพื่อนไม่สำเร็จ');
-    }
-  };
-
   return (
     <div className="mx-auto max-w-[1180px] animate-in fade-in duration-500 pb-20">
       <section className="relative mb-6 min-h-[230px] overflow-hidden rounded-[28px] border border-white/[0.08] bg-[#171b26] shadow-2xl shadow-black/30">
@@ -127,7 +79,7 @@ export default function ExploreView() {
               <span className="h-2 w-2 rounded-full bg-[#ff7549] shadow-[0_0_12px_#ff7549]" />
               Matchfound Dashboard
             </div>
-            <h2 className="max-w-xl text-3xl font-black leading-tight text-white md:text-5xl">Find your squad.<br />Own the game.</h2>
+            <h2 className="explore-hero-title max-w-xl text-3xl font-black leading-tight text-white md:text-5xl">Find your squad.<br />Own the game.</h2>
             <p className="mt-4 max-w-lg text-sm leading-6 text-gray-300 md:text-base">ค้นหาทีม เล่นเกม และพบเพื่อนที่ตรงกับสไตล์การเล่นของคุณ</p>
           </div>
           <button onClick={() => setShowCreate(true)} className="absolute bottom-7 right-7 flex items-center gap-2 rounded-xl bg-[#ff6035] px-5 py-3 font-bold text-white shadow-xl shadow-orange-950/40 transition hover:-translate-y-0.5 hover:bg-[#ff754f]">
@@ -139,11 +91,11 @@ export default function ExploreView() {
       <div className="mb-6 grid gap-3 sm:grid-cols-2 xl:grid-cols-4">
         {games.map((item) => (
           <button key={item.id} onClick={() => { setGame(item.name); setRank(''); loadParties(item.name, region, ''); }} className={`relative h-28 overflow-hidden rounded-2xl border text-left transition hover:-translate-y-1 ${game === item.name ? 'border-orange-400' : 'border-white/[0.08]'}`}>
-            <img src={item.imageUrl || gameImages[item.name] || gameImages.Valorant} alt={`${item.name} party`} className="absolute inset-0 h-full w-full object-cover opacity-55" />
+            <img src={getGameArtwork(item.name)} alt={`${item.name} game artwork`} className="absolute inset-0 h-full w-full object-cover opacity-55" />
             <div className="absolute inset-0 bg-gradient-to-r from-[#11151f] via-[#11151f]/70 to-transparent" />
             <div className="relative flex h-full flex-col justify-end p-4">
-              <span className="text-lg font-bold text-white">{item.name}</span>
-              <span className="mt-1 text-xs text-gray-300">Browse parties</span>
+              <span className="game-tile-name text-lg font-bold text-white">{item.name}</span>
+              <span className="game-tile-caption mt-1 text-xs text-gray-300">Browse parties</span>
             </div>
           </button>
         ))}
@@ -162,51 +114,8 @@ export default function ExploreView() {
           <option value="">Any Region</option>
           {['Asia', 'Europe', 'North America', 'South America', 'Oceania', 'Middle East', 'Africa'].map(item => <option key={item}>{item}</option>)}
         </select>
-        <button type="button" onClick={() => { setGame(''); setRank(''); setRegion(''); loadParties('', '', ''); }} className="rounded-xl px-5 py-3 text-sm font-semibold text-gray-300 hover:bg-white/[0.05] hover:text-white">Clear</button>
+        <button type="button" onClick={() => { setGame(''); setRank(''); setRegion(''); loadParties('', '', ''); }} className="filter-clear rounded-xl px-5 py-3 text-sm font-semibold text-gray-300 hover:bg-white/[0.05] hover:text-white">Clear</button>
       </div>
-
-      <form onSubmit={searchPlayers} className="glass-panel p-4 mb-6 flex flex-col sm:flex-row gap-3">
-        <Search className="w-5 h-5 text-mf-primary shrink-0 mt-2.5 sm:mt-2" />
-        <input value={playerQuery} onChange={event => setPlayerQuery(event.target.value)} maxLength={100} placeholder="ค้นหาเพื่อนด้วยชื่อผู้เล่น..." className="flex-1 bg-gray-800 border border-gray-700 rounded-lg px-4 py-2 text-white outline-none focus:border-mf-primary" />
-        <button disabled={playerLoading} className="bg-gray-700 hover:bg-gray-600 px-5 py-2 rounded-lg text-white disabled:opacity-60">{playerLoading ? 'กำลังค้นหา...' : 'ค้นหาเพื่อน'}</button>
-      </form>
-      {playerResults.length > 0 && (
-        <div className="glass-panel mb-8 p-4 grid gap-3 sm:grid-cols-2 lg:grid-cols-3">
-          {playerResults.map(player => (
-            <div key={player.id} className="rounded-xl border border-gray-700 bg-gray-900/60 p-3">
-              <button onClick={() => navigate(`/profile/${player.id}`)} className="flex w-full items-center gap-3 text-left">
-                <div className="grid h-10 w-10 shrink-0 place-items-center rounded-full bg-mf-primary/20 font-bold text-mf-primary">{(player.displayName || player.username || '?').slice(0, 2).toUpperCase()}</div>
-                <div className="min-w-0"><p className="truncate font-semibold text-white">{player.displayName || player.username}</p><p className="truncate text-xs text-gray-400">@{player.username}</p></div>
-              </button>
-              {!!player.games?.length && <p className="mt-3 truncate text-xs text-gray-400"><span className="text-gray-500">เล่น:</span> {player.games.map((item: any) => item.name).join(' · ')}</p>}
-              {player.activeParty && (
-                <button onClick={() => navigate(`/party/${player.activeParty.id}`)} className="mt-2 w-full truncate rounded-lg border border-orange-400/20 bg-orange-500/10 px-2 py-1.5 text-left text-xs text-orange-300">
-                  In party: {player.activeParty.title}
-                </button>
-              )}
-              <button onClick={() => void sendFriendRequest(player.id)} disabled={player.friendRequested} className="mt-3 w-full rounded-lg border border-mf-primary/30 bg-mf-primary/10 py-2 text-xs font-semibold text-mf-primary disabled:text-gray-500">
-                {player.friendRequested ? 'Request Sent' : 'Add Friend'}
-              </button>
-            </div>
-          ))}
-        </div>
-      )}
-
-      <form onSubmit={runAiMatch} className="glass-panel p-4 mb-8 flex flex-col sm:flex-row gap-3">
-        <div className="flex items-center gap-2 text-mf-primary shrink-0"><Sparkles className="w-5 h-5" /><span className="font-semibold text-white">AI Party Helper</span></div>
-        <input value={aiQuery} onChange={event => setAiQuery(event.target.value)} required placeholder="Find a Valorant party with a chill team and mic..." className="flex-1 bg-gray-800 border border-gray-700 rounded-lg px-4 py-2 text-white outline-none focus:border-mf-primary" />
-        <button disabled={aiLoading} className="bg-mf-primary px-4 py-2 rounded-lg text-white flex items-center justify-center gap-2 disabled:opacity-60"><Search className="w-4 h-4" />{aiLoading ? 'Finding...' : 'Find Party'}</button>
-      </form>
-      {aiMatches.length > 0 && (
-        <div className="glass-panel p-4 mb-8 grid gap-3">
-          {aiMatches.map(match => (
-            <button key={match.partyId || match.id} onClick={() => navigate(`/party/${match.partyId || match.id}`)} className="flex items-center justify-between gap-4 bg-gray-900/60 border border-gray-700 hover:border-mf-primary/50 rounded-lg p-4 text-left">
-              <div><p className="font-bold text-white">{match.username}</p><p className="text-sm text-gray-400">{match.reasons?.join(' · ')}</p></div>
-              <span className="text-mf-primary font-bold">{match.compatibilityScore}%</span>
-            </button>
-          ))}
-        </div>
-      )}
 
       <div className="grid grid-cols-1 md:grid-cols-2 xl:grid-cols-3 gap-6">
         {parties.map(party => (

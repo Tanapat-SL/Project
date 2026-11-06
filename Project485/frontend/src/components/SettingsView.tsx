@@ -1,5 +1,5 @@
 import { useEffect, useState } from 'react';
-import { Ban, Check, LoaderCircle, Palette, Shield, UserRound, X } from 'lucide-react';
+import { Accessibility, Ban, Check, LoaderCircle, Palette, Shield, UserRound, X } from 'lucide-react';
 import { apiClient } from '../api/client';
 
 type ThemeName = 'dark' | 'light' | 'purple';
@@ -11,8 +11,13 @@ const themes: { id: ThemeName; name: string; description: string; swatches: stri
   { id: 'purple', name: 'Midnight Purple', description: 'โทนม่วงเข้ม', swatches: ['#100b1e', '#dc2626', '#b91c1c'] },
 ];
 
-export default function SettingsView() {
-  const [theme, setTheme] = useState<ThemeName>((localStorage.getItem('mf_theme') as ThemeName) || 'light');
+export default function SettingsView({ embedded = false }: { embedded?: boolean }) {
+  const [theme, setTheme] = useState<ThemeName>(() => {
+    const savedTheme = localStorage.getItem('mf_theme');
+    return savedTheme === 'light' || savedTheme === 'purple' ? savedTheme : 'dark';
+  });
+  const [reduceMotion, setReduceMotion] = useState(localStorage.getItem('mf_reduce_motion') === 'true');
+  const [compactLayout, setCompactLayout] = useState(localStorage.getItem('mf_compact_layout') === 'true');
   const [blockedUsers, setBlockedUsers] = useState<BlockedUser[]>([]);
   const [loading, setLoading] = useState(true);
   const [removingId, setRemovingId] = useState<number | null>(null);
@@ -23,6 +28,16 @@ export default function SettingsView() {
       .catch(() => setBlockedUsers([]))
       .finally(() => setLoading(false));
   }, []);
+
+  useEffect(() => {
+    document.documentElement.dataset.reduceMotion = String(reduceMotion);
+    localStorage.setItem('mf_reduce_motion', String(reduceMotion));
+  }, [reduceMotion]);
+
+  useEffect(() => {
+    document.documentElement.dataset.density = compactLayout ? 'compact' : 'comfortable';
+    localStorage.setItem('mf_compact_layout', String(compactLayout));
+  }, [compactLayout]);
 
   const changeTheme = (nextTheme: ThemeName) => {
     setTheme(nextTheme);
@@ -44,10 +59,10 @@ export default function SettingsView() {
 
   return (
     <div className="max-w-4xl mx-auto animate-in fade-in duration-500 pb-20 space-y-6">
-      <header>
+      {!embedded && <header>
         <h1 className="text-3xl font-bold text-white">Settings</h1>
         <p className="mt-2 text-gray-400">ปรับแต่งหน้าตาและจัดการความปลอดภัยของบัญชี</p>
-      </header>
+      </header>}
 
       <section className="glass-panel p-6">
         <h2 className="flex items-center gap-2 text-xl font-bold text-white"><Palette className="h-5 w-5 text-mf-primary" /> Theme</h2>
@@ -62,6 +77,21 @@ export default function SettingsView() {
               <p className="mt-1 text-xs text-gray-400">{option.description}</p>
             </button>
           ))}
+        </div>
+      </section>
+
+      <section className="glass-panel p-6">
+        <h2 className="flex items-center gap-2 text-xl font-bold text-white"><Accessibility className="h-5 w-5 text-mf-primary" /> Accessibility</h2>
+        <p className="mt-1 mb-5 text-sm text-gray-400">ปรับการเคลื่อนไหวและความหนาแน่นของหน้าจอ โดยบันทึกไว้ในอุปกรณ์นี้</p>
+        <div className="space-y-3">
+          <label className="flex cursor-pointer items-center justify-between gap-4 rounded-xl border border-gray-700 bg-gray-800/40 p-4">
+            <span><span className="block font-semibold text-white">ลดการเคลื่อนไหว</span><span className="mt-1 block text-sm text-gray-400">ลดแอนิเมชันและเอฟเฟกต์การเปลี่ยนหน้า</span></span>
+            <input type="checkbox" checked={reduceMotion} onChange={event => setReduceMotion(event.target.checked)} className="h-5 w-5 accent-mf-primary" />
+          </label>
+          <label className="flex cursor-pointer items-center justify-between gap-4 rounded-xl border border-gray-700 bg-gray-800/40 p-4">
+            <span><span className="block font-semibold text-white">เลย์เอาต์กะทัดรัด</span><span className="mt-1 block text-sm text-gray-400">ลดระยะขอบของพื้นที่เนื้อหาเพื่อให้เห็นข้อมูลมากขึ้น</span></span>
+            <input type="checkbox" checked={compactLayout} onChange={event => setCompactLayout(event.target.checked)} className="h-5 w-5 accent-mf-primary" />
+          </label>
         </div>
       </section>
 

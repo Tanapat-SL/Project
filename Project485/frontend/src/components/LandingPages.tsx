@@ -2,6 +2,7 @@ import React, { useEffect, useState } from 'react';
 import { Link, useNavigate } from 'react-router-dom';
 import { ArrowDown, ArrowLeft, ArrowRight, Check, ChevronDown, Gamepad2, Globe2, Headphones, Languages, LockKeyhole, MessageCircle, Search, ShieldCheck, Sparkles, Swords, Users, Zap } from 'lucide-react';
 import { socket } from '../api/socket';
+import { getGameArtwork } from '../utils/game-artwork';
 
 export type Language = 'th' | 'en';
 type LanguageProps = { language: Language; onLanguageChange: (language: Language) => void };
@@ -109,7 +110,7 @@ export function LandingPage({ language, onLanguageChange }: LanguageProps) {
     {
       name: 'VALORANT',
       tag: language === 'th' ? 'เกมยิงกลยุทธ์ 5v5' : 'Tactical 5v5 shooter',
-      image: 'https://images.unsplash.com/photo-1542751371-adc38448a05e?auto=format&fit=crop&w=900&q=85',
+      image: getGameArtwork('Valorant'),
       accent: '#ff4655',
     },
     {

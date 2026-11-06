@@ -79,6 +79,20 @@ enum ReportStatus {
   DISMISSED
 }
 
+enum ReportCategory {
+  PROFANITY
+  TOXIC
+  AFK
+  DISRUPTION
+  HARASSMENT
+}
+
+enum BanAppealStatus {
+  OPEN
+  APPROVED
+  REJECTED
+}
+
 // ─────────────────────────────────────────────
 // Users & Games
 // ─────────────────────────────────────────────
@@ -95,6 +109,12 @@ model User {
   languages String[] @default([])
   timezone  String   @default("Asia/Bangkok")
   contact   String?
+  profanityWarnings Int @default(0)
+  chatMutedUntil DateTime?
+  isBanned Boolean @default(false)
+  bannedAt DateTime?
+  banReason String? @db.VarChar(500)
+  bannedByDiscordId String?
   createdAt DateTime @default(now())
   updatedAt DateTime @updatedAt
 
@@ -111,6 +131,7 @@ model User {
   reportsReceived    Report[]             @relation("ReportTarget")
   friendRequestsSent     FriendRequest[] @relation("FriendRequester")
   friendRequestsReceived FriendRequest[] @relation("FriendReceiver")
+  banAppeals BanAppeal[]
 }
 
 model Game {
@@ -296,6 +317,7 @@ model Report {
   id           Int          @id @default(autoincrement())
   reporterId   Int
   targetUserId Int
+  category     ReportCategory @default(DISRUPTION)
   reason       String       @db.VarChar(1000)
   status       ReportStatus @default(OPEN)
   createdAt    DateTime     @default(now())
@@ -305,4 +327,20 @@ model Report {
 
   @@index([status])
   @@index([targetUserId])
+}
+
+model BanAppeal {
+  id        Int             @id @default(autoincrement())
+  userId    Int
+  message   String          @db.VarChar(2000)
+  status    BanAppealStatus @default(OPEN)
+  adminNote String?         @db.VarChar(1000)
+  createdAt DateTime        @default(now())
+  reviewedAt DateTime?
+  reviewedByDiscordId String?
+
+  user User @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@index([userId, status])
+  @@index([status, createdAt])
 }

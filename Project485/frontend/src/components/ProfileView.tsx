@@ -1,7 +1,8 @@
 import React, { useEffect, useState } from 'react';
-import { useNavigate, useParams } from 'react-router-dom';
-import { User, Shield, Gamepad2, Edit3, X, Save, Plus, Trash2, UserPlus, UserCheck, Clock3 } from 'lucide-react';
+import { useNavigate, useParams, useSearchParams } from 'react-router-dom';
+import { User, Shield, Gamepad2, Edit3, X, Save, Plus, Trash2, UserPlus, UserCheck, Clock3, Settings as SettingsIcon } from 'lucide-react';
 import { apiClient } from '../api/client';
+import SettingsView from './SettingsView';
 
 type GameProfile = {
   gameId: number;
@@ -32,9 +33,14 @@ const platforms = [
 export default function ProfileView() {
   const { userId } = useParams<{ userId: string }>();
   const navigate = useNavigate();
-  const isOwnProfile = !userId;
+  const [searchParams, setSearchParams] = useSearchParams();
+  const activeTab = searchParams.get('tab') === 'settings' ? 'settings' : 'profile';
+  const [currentUserId, setCurrentUserId] = useState<number | null>(null);
+  const isOwnProfile = !userId || (currentUserId !== null && Number(userId) === currentUserId);
   const [editing, setEditing] = useState(false);
   const [saving, setSaving] = useState(false);
+  const [loading, setLoading] = useState(true);
+  const [loadError, setLoadError] = useState('');
   const [availableGames, setAvailableGames] = useState<GameOption[]>([]);
   const [profile, setProfile] = useState<any>({ languages: [], games: [] });
   const [gameDrafts, setGameDrafts] = useState<GameProfile[]>([]);
@@ -42,7 +48,12 @@ export default function ProfileView() {
   const [friendStatus, setFriendStatus] = useState<{ status: string; requestId?: number }>({ status: 'NONE' });
 
   const loadProfile = async () => {
-    if (userId) {
+    setLoading(true);
+    setLoadError('');
+    try {
+      const { data: me } = await apiClient.get('/auth/me');
+      setCurrentUserId(Number(me.id));
+      if (userId && Number(userId) !== Number(me.id)) {
       const { data: user } = await apiClient.get(`/users/${userId}`);
       setProfile(user);
       setGameDrafts([]);
@@ -53,26 +64,35 @@ export default function ProfileView() {
         setFriendStatus({ status: 'NONE' });
       }
       return;
+      }
+      const [{ data: user }, { data: games }] = await Promise.all([
+        apiClient.get('/auth/me'),
+        apiClient.get('/games'),
+      ]);
+      setProfile(user);
+      setAvailableGames(games);
+      setGameDrafts((user.games || []).map((item: any) => ({
+        gameId: item.game.id,
+        game: item.game,
+        rank: item.game.ranks?.includes(item.rank) ? item.rank : '',
+        platform: item.platform || 'PC',
+        playStyle: item.playStyle || 'CASUAL',
+        micEnabled: item.micEnabled !== false,
+      })));
+    } finally {
+      setLoading(false);
     }
-    const [{ data: user }, { data: games }] = await Promise.all([
-      apiClient.get('/auth/me'),
-      apiClient.get('/games'),
-    ]);
-    setProfile(user);
-    setAvailableGames(games);
-    setGameDrafts((user.games || []).map((item: any) => ({
-      gameId: item.game.id,
-      game: item.game,
-      rank: item.game.ranks?.includes(item.rank) ? item.rank : '',
-      platform: item.platform || 'PC',
-      playStyle: item.playStyle || 'CASUAL',
-      micEnabled: item.micEnabled !== false,
-    })));
   };
 
   useEffect(() => {
-    if (!userId && !localStorage.getItem('mf_token')) return;
-    loadProfile().catch(() => undefined);
+    if (!localStorage.getItem('mf_token')) {
+      setLoading(false);
+      setLoadError('กรุณาเข้าสู่ระบบก่อนดูโปรไฟล์');
+      return;
+    }
+    loadProfile().catch((error: any) => {
+      setLoadError(error.response?.status === 404 ? 'ไม่พบโปรไฟล์นี้ หรือผู้ใช้นี้ถูกบล็อกไว้' : 'โหลดโปรไฟล์ไม่สำเร็จ กรุณาลองใหม่');
+    });
   }, [userId]);
 
   const startEditing = () => {
@@ -148,6 +168,14 @@ export default function ProfileView() {
   return (
     <div className="max-w-4xl mx-auto animate-in fade-in duration-500 pb-20">
       {!isOwnProfile && <button onClick={() => navigate(-1)} className="mb-4 text-sm text-gray-500 hover:text-mf-primary">← Back</button>}
+      {loading ? <div className="glass-panel p-10 text-center text-gray-400">กำลังโหลดโปรไฟล์...</div> : loadError ? <div role="alert" className="glass-panel p-8 text-center text-red-300">{loadError}</div> : <>
+      {isOwnProfile && (
+        <div className="mb-6 flex w-fit gap-1 rounded-xl border border-white/[0.08] bg-white/[0.04] p-1">
+          <button type="button" onClick={() => setSearchParams({})} className={`flex items-center gap-2 rounded-lg px-4 py-2 text-sm font-semibold transition-colors ${activeTab === 'profile' ? 'bg-mf-primary text-white' : 'text-gray-400 hover:text-white'}`}><User className="h-4 w-4" /> My Profile</button>
+          <button type="button" onClick={() => setSearchParams({ tab: 'settings' })} className={`flex items-center gap-2 rounded-lg px-4 py-2 text-sm font-semibold transition-colors ${activeTab === 'settings' ? 'bg-mf-primary text-white' : 'text-gray-400 hover:text-white'}`}><SettingsIcon className="h-4 w-4" /> Settings</button>
+        </div>
+      )}
+      {isOwnProfile && activeTab === 'settings' ? <SettingsView embedded /> : <>
       <div className="glass-panel p-8 mb-6 relative overflow-hidden">
         <div className="absolute top-0 left-0 w-full h-32 bg-gradient-to-r from-mf-primary/20 to-mf-secondary/20 border-b border-gray-800"></div>
         <div className="relative pt-16 flex flex-col md:flex-row gap-6 items-start md:items-end">
@@ -161,13 +189,13 @@ export default function ProfileView() {
             )}
           </div>
           <div className="flex-1">
-            <h1 className="text-3xl font-bold text-white mb-1">{profile.displayName || profile.username || 'My Profile'}</h1>
+            <h1 className="mb-1 flex flex-wrap items-center gap-2 text-3xl font-bold text-white">{profile.displayName || profile.username || 'My Profile'}{isOwnProfile && profile.isAdmin && <span className="inline-flex items-center gap-1 rounded-full border border-amber-400/30 bg-amber-400/10 px-2.5 py-1 text-[10px] font-black tracking-[0.12em] text-amber-300"><Shield className="h-3 w-3" />ADMIN</span>}</h1>
             <p className="text-gray-400 flex items-center gap-2"><span className="w-2 h-2 rounded-full bg-green-500"></span> Online</p>
           </div>
           {isOwnProfile && <button onClick={startEditing} className="flex items-center justify-center gap-2 bg-gray-800 hover:bg-gray-700 border border-gray-700 px-4 py-2 rounded-lg text-sm transition-colors">
             <Edit3 className="w-4 h-4" /> Edit Profile
           </button>}
-          {!isOwnProfile && friendStatus.status === 'NONE' && (
+          {!isOwnProfile && friendStatus.status === 'NONE' && Number(profile.id) !== currentUserId && (
             <button onClick={() => void sendFriendRequest()} className="flex items-center gap-2 rounded-lg bg-[#ff6035] px-4 py-2 text-sm font-semibold text-white"><UserPlus className="w-4 h-4" /> Add Friend</button>
           )}
           {!isOwnProfile && friendStatus.status === 'REQUESTED' && (
@@ -193,6 +221,9 @@ export default function ProfileView() {
             <div className="mt-6 space-y-4">
               <div><span className="text-xs text-gray-500 uppercase font-semibold">Playstyle</span><p className="text-white">{profile.games?.length ? [...new Set(profile.games.map((item: any) => styleLabel(item.playStyle)))].join(' / ') : 'Not set'}</p></div>
               <div><span className="text-xs text-gray-500 uppercase font-semibold">Discord</span><p className="text-mf-primary font-medium break-all">{profile.username || 'Unknown Discord user'}</p></div>
+              <div><span className="text-xs text-gray-500 uppercase font-semibold">Languages</span><p className="text-white">{profile.languages?.length ? profile.languages.join(', ') : 'Not set'}</p></div>
+              <div><span className="text-xs text-gray-500 uppercase font-semibold">Timezone</span><p className="text-white">{profile.timezone || 'Not set'}</p></div>
+              {isOwnProfile && profile.contact && <div><span className="text-xs text-gray-500 uppercase font-semibold">Private contact</span><p className="text-white break-all">{profile.contact}</p></div>}
               {profile.activeParty && (
                 <button onClick={() => navigate(`/party/${profile.activeParty.id}`)} className="mt-2 w-full rounded-xl border border-orange-400/30 bg-orange-500/10 p-3 text-left">
                   <span className="text-xs font-semibold uppercase text-orange-300">Currently in party</span>
@@ -255,6 +286,8 @@ export default function ProfileView() {
           </form>
         </div>
       )}
+      </>}
+      </>}
     </div>
   );
 }

@@ -1,6 +1,6 @@
 import React, { useState, useEffect } from 'react';
 import { BrowserRouter, Routes, Route, Link, useLocation, Navigate } from 'react-router-dom';
-import { Search, MessageSquare, User, Gamepad2, Settings, LogOut, Bell, Users } from 'lucide-react';
+import { Search, MessageSquare, User, Gamepad2, LogOut, Bell, Users, ShieldAlert } from 'lucide-react';
 import axios from 'axios';
 import { apiClient } from './api/client';
 import { socket } from './api/socket';
@@ -11,8 +11,9 @@ import ProfileView from './components/ProfileView';
 import PartyDetailView from './components/PartyDetailView';
 import NotificationsView from './components/NotificationsView';
 import FriendsView from './components/FriendsView';
+import AdminReportsView from './components/AdminReportsView';
+import BanAppealView from './components/BanAppealView';
 
-import SettingsView from './components/SettingsView';
 import { LandingPage, LoginPage, type Language } from './components/LandingPages';
 
 
@@ -26,10 +27,17 @@ function MainLayout() {
 
   useEffect(() => {
     document.documentElement.dataset.theme = localStorage.getItem('mf_theme') || 'dark';
+    document.documentElement.dataset.reduceMotion = localStorage.getItem('mf_reduce_motion') || 'false';
+    document.documentElement.dataset.density = localStorage.getItem('mf_compact_layout') === 'true' ? 'compact' : 'comfortable';
     const handleConnect = () => setConnectionState('online');
     const handleDisconnect = () => setConnectionState('connecting');
     const handleConnectionError = () => setConnectionState('offline');
     setConnectionState(socket.connected ? 'online' : 'connecting');
+    const socketToken = localStorage.getItem('mf_token');
+    if (socketToken) {
+      socket.auth = { token: socketToken };
+      if (socket.connected) socket.disconnect();
+    }
     socket.on('connect', handleConnect);
     socket.on('disconnect', handleDisconnect);
     socket.on('connect_error', handleConnectionError);
@@ -82,10 +90,24 @@ function MainLayout() {
     window.location.href = '/';
   };
 
+  const refreshCurrentUser = async () => {
+    try {
+      const { data } = await apiClient.get('/auth/me');
+      setCurrentUser(data);
+    } catch {
+      localStorage.removeItem('mf_token');
+      setCurrentUser(null);
+    }
+  };
+
+  if (currentUser?.isBanned) {
+    return <BanAppealView reason={currentUser.banReason} bannedAt={currentUser.bannedAt} onUnbanned={() => void refreshCurrentUser()} />;
+  }
+
   return (
-    <div className="min-h-screen flex bg-mf-dark">
+    <div className="app-shell min-h-screen flex bg-mf-dark">
       {/* Sidebar Navigation */}
-      <nav className="w-20 lg:w-60 border-r border-white/[0.07] bg-[#10141d] flex flex-col justify-between p-4 sticky top-0 h-screen z-50">
+      <nav className="app-sidebar w-20 lg:w-60 border-r border-white/[0.07] flex flex-col justify-between p-4 sticky top-0 h-screen z-50">
         <div>
           <a href="/" aria-label="MATCHFOUND home and refresh" className="flex items-center justify-center lg:justify-start gap-3 mb-10 px-2 rounded-lg focus:outline-none focus-visible:ring-2 focus-visible:ring-mf-primary">
             <div className="w-10 h-10 rounded-xl bg-gradient-to-br from-mf-primary to-mf-secondary flex items-center justify-center shadow-lg shadow-mf-primary/20 shrink-0">
@@ -109,6 +131,7 @@ function MainLayout() {
             <Link to="/friends">
               <NavButton icon={<Users />} label="Friends" active={currentPath === '/friends'} />
             </Link>
+            {currentUser?.isAdmin && <Link to="/admin/reports"><NavButton icon={<ShieldAlert />} label="Log Report" active={currentPath === '/admin/reports'} /></Link>}
           </div>
         </div>
 
@@ -119,7 +142,7 @@ function MainLayout() {
               <img src={currentUser.avatarUrl} alt="Avatar" className="w-10 h-10 rounded-full border border-mf-primary object-cover shrink-0" />
               <div className="hidden lg:block overflow-hidden">
                 <p className="text-sm font-bold text-white truncate">{currentUser.displayName || currentUser.username}</p>
-                <p className="text-xs text-mf-primary">My Profile</p>
+                <p className="flex items-center gap-1.5 text-xs text-mf-primary">My Profile {currentUser.isAdmin && <span className="rounded bg-amber-400/15 px-1.5 py-0.5 text-[9px] font-black tracking-wide text-amber-300">ADMIN</span>}</p>
               </div>
             </Link>
           ) : (
@@ -133,9 +156,6 @@ function MainLayout() {
             <div className={`w-2 h-2 rounded-full ${connectionState === 'online' ? 'bg-green-500 shadow-[0_0_8px_#22c55e]' : connectionState === 'connecting' ? 'bg-yellow-500 animate-pulse' : 'bg-red-500'}`}></div>
             <span className="text-xs text-gray-400">{connectionState === 'online' ? 'System Online' : connectionState === 'connecting' ? 'Connecting...' : 'Offline'}</span>
           </div>
-          <Link to="/settings">
-            <NavButton icon={<Settings />} label="Settings" active={currentPath === '/settings'} />
-          </Link>
           {currentUser && (
             <button onClick={handleLogout} className="w-full flex items-center justify-center lg:justify-start gap-3 p-3 rounded-xl text-gray-400 hover:text-red-400 hover:bg-red-500/10 transition-colors group">
               <LogOut className="group-hover:text-red-400" /> <span className="hidden lg:block font-medium">Logout</span>
@@ -145,7 +165,7 @@ function MainLayout() {
       </nav>
 
       {/* Main Content Area */}
-      <main className="flex-1 bg-[#090d16] p-4 md:p-6 lg:p-10 h-screen overflow-y-auto">
+      <main className="app-main flex-1 p-4 md:p-6 lg:p-10 h-screen overflow-y-auto">
         <Routes>
           <Route path="/" element={<ExploreView />} />
           <Route path="/chat" element={<ChatView currentUser={currentUser} />} />
@@ -155,7 +175,8 @@ function MainLayout() {
           <Route path="/matchmaker" element={<Navigate to="/" replace />} />
           <Route path="/notifications" element={<NotificationsView />} />
           <Route path="/friends" element={<FriendsView />} />
-          <Route path="/settings" element={<SettingsView />} />
+          <Route path="/admin/reports" element={currentUser?.isAdmin ? <AdminReportsView /> : <Navigate to="/" replace />} />
+          <Route path="/settings" element={<Navigate to="/profile?tab=settings" replace />} />
         </Routes>
       </main>
     </div>

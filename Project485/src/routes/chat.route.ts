@@ -1,9 +1,19 @@
 import { Router } from 'express';
 import { prisma } from '../lib/prisma';
 import { authenticate } from '../middlewares/auth.middleware';
-import { checkContent } from '../services/safety.service';
+import { checkContent, getActiveChatMute, registerProfanityStrike } from '../services/safety.service';
 
 const router = Router();
+
+router.get('/status', authenticate, async (req, res) => {
+  const userId = (req as any).user.userId;
+  const user = await prisma.user.findUnique({
+    where: { id: userId },
+    select: { profanityWarnings: true, chatMutedUntil: true },
+  });
+  const mutedUntil = user?.chatMutedUntil && user.chatMutedUntil > new Date() ? user.chatMutedUntil : null;
+  res.json({ warnings: user?.profanityWarnings || 0, mutedUntil });
+});
 
 router.get('/party/:partyId', authenticate, async (req, res) => {
   const userId = (req as any).user.userId;
@@ -34,13 +44,21 @@ router.post('/party/:partyId', authenticate, async (req, res) => {
   const partyId = Number(req.params.partyId);
   const content = String(req.body.content || '').trim().slice(0, 2000);
   if (!content) return res.status(400).json({ message: 'Message content is required' });
+  const member = await prisma.partyMember.findUnique({ where: { partyId_userId: { partyId, userId } } });
+  if (!member || member.status !== 'ACCEPTED') return res.status(403).json({ message: 'Party membership required' });
+  const mutedUntil = await getActiveChatMute(userId);
+  if (mutedUntil) return res.status(403).json({ code: 'CHAT_MUTED', mutedUntil, message: 'บัญชีของคุณถูกระงับการแชทชั่วคราว' });
   const safety = await checkContent(content);
+  if (safety.code === 'PROFANITY_DETECTED') {
+    const strike = await registerProfanityStrike(userId);
+    if (strike.mutedUntil) {
+      return res.status(403).json({ code: 'CHAT_MUTED', warnings: strike.warnings, mutedUntil: strike.mutedUntil, message: 'ครบ 3 คำเตือนแล้ว ระงับการแชททุกห้องเป็นเวลา 30 นาที' });
+    }
+    return res.status(400).json({ code: 'PROFANITY_WARNING', warnings: strike.warnings, warningsRemaining: 3 - strike.warnings, message: `พบคำหยาบ ข้อความไม่ได้ถูกส่ง (คำเตือน ${strike.warnings}/3)` });
+  }
   if (safety.level === 'BLOCK') {
     return res.status(400).json({ code: safety.code, message: 'Your message does not follow our community safety rules. Please revise it.' });
   }
-
-  const member = await prisma.partyMember.findUnique({ where: { partyId_userId: { partyId, userId } } });
-  if (!member || member.status !== 'ACCEPTED') return res.status(403).json({ message: 'Party membership required' });
 
   const conversation = await prisma.conversation.upsert({
     where: { partyId },
@@ -97,7 +115,16 @@ router.post('/direct/:friendId', authenticate, async (req, res) => {
   if (!friendship) return res.status(403).json({ message: 'Direct chat requires an accepted friend' });
   const content = String(req.body.content || '').trim().slice(0, 2000);
   if (!content) return res.status(400).json({ message: 'Message content is required' });
+  const mutedUntil = await getActiveChatMute(userId);
+  if (mutedUntil) return res.status(403).json({ code: 'CHAT_MUTED', mutedUntil, message: 'บัญชีของคุณถูกระงับการแชทชั่วคราว' });
   const safety = await checkContent(content);
+  if (safety.code === 'PROFANITY_DETECTED') {
+    const strike = await registerProfanityStrike(userId);
+    if (strike.mutedUntil) {
+      return res.status(403).json({ code: 'CHAT_MUTED', warnings: strike.warnings, mutedUntil: strike.mutedUntil, message: 'ครบ 3 คำเตือนแล้ว ระงับการแชททุกห้องเป็นเวลา 30 นาที' });
+    }
+    return res.status(400).json({ code: 'PROFANITY_WARNING', warnings: strike.warnings, warningsRemaining: 3 - strike.warnings, message: `พบคำหยาบ ข้อความไม่ได้ถูกส่ง (คำเตือน ${strike.warnings}/3)` });
+  }
   if (safety.level === 'BLOCK') {
     return res.status(400).json({ code: safety.code, message: 'Your message does not follow our community safety rules. Please revise it.' });
   }

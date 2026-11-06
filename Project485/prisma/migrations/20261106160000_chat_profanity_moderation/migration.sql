@@ -1,0 +1,3 @@
+ALTER TABLE "User"
+ADD COLUMN "profanityWarnings" INTEGER NOT NULL DEFAULT 0,
+ADD COLUMN "chatMutedUntil" TIMESTAMP(3);

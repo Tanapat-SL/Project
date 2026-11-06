@@ -47,6 +47,7 @@ router.get('/status/:userId', authenticate, async (req, res) => {
   const targetId = Number(req.params.userId);
   if (!Number.isInteger(targetId) || targetId < 1)
     return res.status(400).json({ message: 'Invalid userId' });
+  if (targetId === userId) return res.json({ status: 'SELF' });
 
   const request = await prisma.friendRequest.findFirst({
     where: {
@@ -72,8 +73,10 @@ router.post('/requests', authenticate, async (req, res) => {
   const requesterId = (req as any).user.userId;
   const receiverId  = Number(req.body.userId);
 
-  if (!receiverId || receiverId === requesterId)
+  if (!Number.isInteger(receiverId) || receiverId < 1 || receiverId === requesterId)
     return res.status(400).json({ message: 'Invalid userId' });
+  const receiverExists = await prisma.user.findUnique({ where: { id: receiverId }, select: { id: true } });
+  if (!receiverExists) return res.status(404).json({ message: 'User not found' });
 
   // บล็อกกันอยู่ → ส่งไม่ได้
   const blocked = await prisma.userBlock.findFirst({
@@ -144,6 +147,8 @@ router.patch('/requests/:id', authenticate, async (req, res) => {
 router.delete('/:userId', authenticate, async (req, res) => {
   const userId   = (req as any).user.userId;
   const targetId = Number(req.params.userId);
+  if (!Number.isInteger(targetId) || targetId < 1 || targetId === userId)
+    return res.status(400).json({ message: 'Invalid userId' });
 
   await prisma.friendRequest.deleteMany({
     where: {
