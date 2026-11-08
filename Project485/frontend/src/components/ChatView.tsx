@@ -1,4 +1,4 @@
-import React, { useEffect, useRef, useState } from 'react';
+import { useEffect, useRef, useState } from 'react';
 import { Link } from 'react-router-dom';
 import { Send, UserRound } from 'lucide-react';
 import { apiClient } from '../api/client';
@@ -59,6 +59,20 @@ export default function ChatView({ currentUser }: { currentUser: ChatUser | null
       setMutedUntil(data.mutedUntil || null);
     }).catch(() => undefined);
   }, []);
+
+  // บอกเซิร์ฟเวอร์ว่ากำลังเปิดห้องไหนอยู่ จะได้ไม่ส่งแจ้งเตือนซ้ำของห้องนี้
+  useEffect(() => {
+    const chatKey = chatMode === 'party'
+      ? (selectedParty ? `party:${selectedParty.id}` : null)
+      : (selectedFriend ? `direct:${selectedFriend.id}` : null);
+    const emitFocus = () => socket.emit('chat_focus', chatKey);
+    emitFocus();
+    socket.on('connect', emitFocus);
+    return () => {
+      socket.off('connect', emitFocus);
+      socket.emit('chat_focus', null);
+    };
+  }, [chatMode, selectedParty, selectedFriend]);
 
   useEffect(() => {
     if (!mutedUntil) return;

@@ -1,6 +1,8 @@
-import React, { useEffect, useState } from 'react';
-import { Bell, CheckCheck } from 'lucide-react';
+import { useEffect, useState } from 'react';
+import { Link } from 'react-router-dom';
+import { Bell, CheckCheck, MessageSquare } from 'lucide-react';
 import { apiClient } from '../api/client';
+import { socket } from '../api/socket';
 
 export default function NotificationsView() {
   const [items, setItems] = useState<any[]>([]);
@@ -14,7 +16,18 @@ export default function NotificationsView() {
     }
   };
 
-  useEffect(() => { void load(); }, []);
+  useEffect(() => {
+    void load();
+    const onNewNotification = () => { void load(); };
+    socket.on('new_notification', onNewNotification);
+    return () => { socket.off('new_notification', onNewNotification); };
+  }, []);
+
+  const describeMessage = (payload: any) => {
+    const where = payload?.kind === 'PARTY' && payload?.partyTitle ? ` in ${payload.partyTitle}` : '';
+    const more = Number(payload?.count) > 1 ? ` (+${Number(payload.count) - 1} more)` : '';
+    return `${payload?.senderName || 'Someone'}${where}: ${payload?.preview || ''}${more}`;
+  };
 
   const markRead = async (id: number) => {
     await apiClient.patch(`/notifications/${id}/read`);
@@ -52,10 +65,18 @@ export default function NotificationsView() {
           <div key={item.id} className={`glass-panel p-4 flex items-center justify-between gap-4 ${item.readAt ? 'opacity-70' : 'border-mf-primary/30'}`}>
             <div>
               <p className="font-semibold text-white">{item.type.replaceAll('_', ' ')}</p>
+              {item.type === 'NEW_MESSAGE' && (
+                <p className="text-sm text-gray-300 mt-1 break-words">{describeMessage(item.payload)}</p>
+              )}
               <p className="text-xs text-gray-500 mt-1">{new Date(item.createdAt).toLocaleString()}</p>
             </div>
             {!item.readAt && (
               <div className="flex gap-2">
+                {item.type === 'NEW_MESSAGE' && (
+                  <Link to="/chat" onClick={() => void markRead(item.id)} className="bg-mf-primary/20 border border-mf-primary/30 text-mf-primary px-3 py-2 rounded-lg text-sm flex items-center gap-1">
+                    <MessageSquare className="w-4 h-4" /> Open chat
+                  </Link>
+                )}
                 {item.type === 'FRIEND_REQUEST' && (
                   <>
                     <button onClick={() => void acceptFriend(item)} className="bg-green-500 px-3 py-2 rounded-lg text-white text-sm font-semibold">Accept</button>

@@ -2,6 +2,7 @@ import { Router } from 'express';
 import { prisma } from '../lib/prisma';
 import { authenticate } from '../middlewares/auth.middleware';
 import { checkContent, getActiveChatMute, registerProfanityStrike } from '../services/safety.service';
+import { markConversationNotificationsRead, notifyDirectMessage, notifyPartyMessage } from '../services/notification.service';
 
 const router = Router();
 
@@ -36,6 +37,7 @@ router.get('/party/:partyId', authenticate, async (req, res) => {
     include: { sender: { select: { id: true, username: true, avatarUrl: true } } },
     orderBy: { createdAt: 'asc' },
   });
+  void markConversationNotificationsRead(req.app.get('io'), userId, conversation.id);
   res.json(messages);
 });
 
@@ -70,6 +72,7 @@ router.post('/party/:partyId', authenticate, async (req, res) => {
     include: { sender: { select: { id: true, username: true, avatarUrl: true } } },
   });
   req.app.get('io')?.to(`party_${partyId}`).emit('receive_party_message', { ...message, partyId });
+  void notifyPartyMessage(req.app.get('io'), message, partyId, conversation.id);
   res.status(201).json(message);
 });
 
@@ -98,6 +101,7 @@ router.get('/direct/:friendId', authenticate, async (req, res) => {
     include: { sender: { select: { id: true, username: true, avatarUrl: true } } },
     orderBy: { createdAt: 'asc' },
   });
+  void markConversationNotificationsRead(req.app.get('io'), userId, conversation.id);
   res.json(messages);
 });
 
@@ -146,6 +150,7 @@ router.post('/direct/:friendId', authenticate, async (req, res) => {
   const payload = { ...message, receiverId: friendId, senderId: userId };
   req.app.get('io')?.to(`user_${friendId}`).emit('receive_direct_message', payload);
   req.app.get('io')?.to(`user_${userId}`).emit('receive_direct_message', payload);
+  void notifyDirectMessage(req.app.get('io'), message, friendId, conversation.id);
   res.status(201).json(message);
 });
 

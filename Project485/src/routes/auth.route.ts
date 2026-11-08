@@ -19,7 +19,7 @@ const safeEqual = (a: string, b: string) => {
 };
 
 // 1. ส่งผู้ใช้ไปหน้าล็อกอิน Discord (พร้อม state กัน CSRF)
-router.get('/discord', (req, res) => {
+router.get('/discord', (_req, res) => {
   const clientId = process.env.DISCORD_CLIENT_ID;
   const redirectUri = process.env.DISCORD_REDIRECT_URI;
   const frontendUrl = process.env.FRONTEND_URL || 'http://localhost:5173';

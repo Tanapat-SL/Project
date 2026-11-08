@@ -1,7 +1,6 @@
 import React, { useState, useEffect } from 'react';
 import { BrowserRouter, Routes, Route, Link, useLocation, Navigate } from 'react-router-dom';
-import { Search, MessageSquare, User, Gamepad2, LogOut, Bell, Users, ShieldAlert } from 'lucide-react';
-import axios from 'axios';
+import { Search, MessageSquare, Gamepad2, LogOut, Bell, Users, ShieldAlert } from 'lucide-react';
 import { apiClient } from './api/client';
 import { socket } from './api/socket';
 
@@ -21,6 +20,7 @@ function MainLayout() {
   const [connectionState, setConnectionState] = useState<'connecting' | 'online' | 'offline'>(socket.connected ? 'online' : 'connecting');
   const [currentUser, setCurrentUser] = useState<any>(null);
   const [notificationCount, setNotificationCount] = useState(0);
+  const [unreadMessageCount, setUnreadMessageCount] = useState(0);
   
   const location = useLocation();
   const currentPath = location.pathname;
@@ -54,8 +54,8 @@ function MainLayout() {
     
     const savedToken = localStorage.getItem('mf_token');
     if (savedToken) {
-      fetchUserData(savedToken);
-      apiClientGetNotifications(savedToken);
+      fetchUserData();
+      apiClientGetNotifications();
     }
 
     return () => {
@@ -64,17 +64,29 @@ function MainLayout() {
       socket.off('connect_error', handleConnectionError);
     };
 
-    async function apiClientGetNotifications(token: string) {
+    async function apiClientGetNotifications() {
       try {
         const res = await apiClient.get('/notifications');
-        setNotificationCount(res.data.filter((item: any) => !item.readAt).length);
+        applyNotificationCounts(res.data);
       } catch {
         setNotificationCount(0);
+        setUnreadMessageCount(0);
       }
     }
   }, []);
 
-  const fetchUserData = async (token: string) => {
+  // นับแจ้งเตือนที่ยังไม่อ่านทั้งหมด (ไอคอนกระดิ่ง) และจำนวนข้อความใหม่ (เมนู Chat Hub)
+  const applyNotificationCounts = (items: any[]) => {
+    const unread = items.filter((item) => !item.readAt);
+    setNotificationCount(unread.length);
+    setUnreadMessageCount(
+      unread
+        .filter((item) => item.type === 'NEW_MESSAGE')
+        .reduce((sum, item) => sum + (Number(item.payload?.count) || 1), 0),
+    );
+  };
+
+  const fetchUserData = async () => {
     try {
       const res = await apiClient.get('/auth/me');
       setCurrentUser(res.data);
@@ -113,6 +125,24 @@ function MainLayout() {
     };
   }, []);
 
+  // เรียลไทม์: แจ้งเตือนใหม่หรือสถานะอ่านเปลี่ยน → โหลดจำนวนที่ยังไม่อ่านใหม่
+  useEffect(() => {
+    const refreshNotificationCount = async () => {
+      try {
+        const res = await apiClient.get('/notifications');
+        applyNotificationCounts(res.data);
+      } catch {
+        // โหลดไม่สำเร็จ: คงตัวเลขเดิมไว้
+      }
+    };
+    socket.on('new_notification', refreshNotificationCount);
+    socket.on('notifications_changed', refreshNotificationCount);
+    return () => {
+      socket.off('new_notification', refreshNotificationCount);
+      socket.off('notifications_changed', refreshNotificationCount);
+    };
+  }, []);
+
   if (currentUser?.isBanned) {
     return <BanAppealView reason={currentUser.banReason} bannedAt={currentUser.bannedAt} onUnbanned={() => void refreshCurrentUser()} />;
   }
@@ -136,7 +166,7 @@ function MainLayout() {
               <NavButton icon={<Search />} label="Explore LFG" active={currentPath === '/' || currentPath.startsWith('/party')} />
             </Link>
             <Link to="/chat">
-              <NavButton icon={<MessageSquare />} label="Chat Hub" active={currentPath === '/chat'} />
+              <NavButton icon={<MessageSquare />} label="Chat Hub" active={currentPath === '/chat'} badge={unreadMessageCount ? (unreadMessageCount > 99 ? '99+' : String(unreadMessageCount)) : undefined} />
             </Link>
             <Link to="/notifications">
               <NavButton icon={<Bell />} label="Notifications" active={currentPath === '/notifications'} badge={notificationCount ? String(notificationCount) : undefined} />

@@ -1,6 +1,6 @@
 import React, { useEffect, useState } from 'react';
 import { useParams, useNavigate, Link } from 'react-router-dom';
-import { Users, Mic, ArrowLeft, Send, ArrowUp, UserX } from 'lucide-react';
+import { Mic, ArrowLeft, Send, ArrowUp, UserX } from 'lucide-react';
 import { apiClient } from '../api/client';
 import { socket } from '../api/socket';
 import { getGameArtwork } from '../utils/game-artwork';

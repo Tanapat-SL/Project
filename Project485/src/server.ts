@@ -66,6 +66,11 @@ io.on('connection', (socket) => {
     console.log(`User ${socket.id} joined personal room user_${userId}`);
   });
 
+  // ห้องแชทที่ผู้ใช้เปิดดูอยู่ ('party:<id>' | 'direct:<friendId>' | null) ใช้เพื่อไม่ส่งแจ้งเตือนซ้ำตอนเปิดห้องนั้นอยู่
+  socket.on('chat_focus', (key) => {
+    socket.data.activeChat = typeof key === 'string' && /^(party|direct):\d{1,10}$/.test(key) ? key : null;
+  });
+
   // Join Party Room
   socket.on('join_party_room', async (partyId) => {
     if (!socket.data.userId || socket.data.isBanned || !Number.isInteger(Number(partyId))) return;

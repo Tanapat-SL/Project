@@ -38,6 +38,7 @@ router.patch('/notifications/:id/read', authenticate, async (req, res) => {
     where: { id: Number(req.params.id), userId: (req as any).user.userId },
     data: { readAt: new Date() },
   });
+  req.app.get('io')?.to(`user_${(req as any).user.userId}`).emit('notifications_changed');
   res.json(notification);
 });
 

@@ -1,0 +1,132 @@
+-- MATCHFOUND compact schema (PostgreSQL) — เทียบเท่า prisma/schema.prisma
+-- ชื่อตาราง/คอลัมน์/ชนิดข้อมูล/ดัชนี/ความสัมพันธ์ เหมือนเดิมทุกอย่าง แค่เขียนให้สั้นลง
+
+CREATE TYPE "Platform" AS ENUM ('PC','PLAYSTATION','XBOX','SWITCH','MOBILE');
+CREATE TYPE "PlayStyle" AS ENUM ('COMPETITIVE','CASUAL','CHILL','LEARNING');
+CREATE TYPE "GameMode" AS ENUM ('RANKED','CASUAL','COOP','CUSTOM');
+CREATE TYPE "PartyStatus" AS ENUM ('OPEN','FULL','CLOSED');
+CREATE TYPE "PartyRole" AS ENUM ('OWNER','MEMBER');
+CREATE TYPE "MemberStatus" AS ENUM ('PENDING','ACCEPTED','REJECTED','LEFT','KICKED');
+CREATE TYPE "ConversationType" AS ENUM ('PARTY','DIRECT');
+CREATE TYPE "NotificationType" AS ENUM ('PARTY_JOIN_REQUEST','PARTY_REQUEST_ACCEPTED','PARTY_REQUEST_REJECTED','NEW_MESSAGE','PARTY_INVITE','FRIEND_REQUEST','FRIEND_REQUEST_ACCEPTED');
+CREATE TYPE "FriendRequestStatus" AS ENUM ('PENDING','ACCEPTED','REJECTED');
+CREATE TYPE "ReportStatus" AS ENUM ('OPEN','REVIEWED','DISMISSED');
+CREATE TYPE "ReportCategory" AS ENUM ('PROFANITY','TOXIC','AFK','DISRUPTION','HARASSMENT');
+CREATE TYPE "BanAppealStatus" AS ENUM ('OPEN','APPROVED','REJECTED');
+
+CREATE TABLE "User" (
+  "id" SERIAL PRIMARY KEY, "discordId" TEXT NOT NULL UNIQUE, "username" TEXT NOT NULL, "displayName" TEXT,
+  "email" TEXT UNIQUE, "avatarUrl" TEXT, "bio" VARCHAR(500), "languages" TEXT[] DEFAULT ARRAY[]::TEXT[],
+  "timezone" TEXT NOT NULL DEFAULT 'Asia/Bangkok', "contact" TEXT, "profanityWarnings" INTEGER NOT NULL DEFAULT 0,
+  "chatMutedUntil" TIMESTAMP(3), "isBanned" BOOLEAN NOT NULL DEFAULT false, "bannedAt" TIMESTAMP(3),
+  "banReason" VARCHAR(500), "bannedByDiscordId" TEXT,
+  "createdAt" TIMESTAMP(3) NOT NULL DEFAULT CURRENT_TIMESTAMP, "updatedAt" TIMESTAMP(3) NOT NULL
+);
+
+CREATE TABLE "Game" (
+  "id" SERIAL PRIMARY KEY, "name" TEXT NOT NULL UNIQUE, "slug" TEXT NOT NULL UNIQUE,
+  "imageUrl" TEXT, "ranks" TEXT[] DEFAULT ARRAY[]::TEXT[]
+);
+
+CREATE TABLE "UserGame" (
+  "id" SERIAL PRIMARY KEY,
+  "userId" INTEGER NOT NULL REFERENCES "User"("id") ON DELETE CASCADE ON UPDATE CASCADE,
+  "gameId" INTEGER NOT NULL REFERENCES "Game"("id") ON DELETE CASCADE ON UPDATE CASCADE,
+  "rank" TEXT, "platform" "Platform" NOT NULL DEFAULT 'PC', "playStyle" "PlayStyle" NOT NULL DEFAULT 'CASUAL',
+  "micEnabled" BOOLEAN NOT NULL DEFAULT true, UNIQUE ("userId","gameId")
+);
+CREATE INDEX ON "UserGame"("gameId");
+
+CREATE TABLE "Availability" (
+  "id" SERIAL PRIMARY KEY,
+  "userId" INTEGER NOT NULL REFERENCES "User"("id") ON DELETE CASCADE ON UPDATE CASCADE,
+  "dayOfWeek" INTEGER NOT NULL, "startTime" TEXT NOT NULL, "endTime" TEXT NOT NULL
+);
+CREATE INDEX ON "Availability"("userId");
+
+CREATE TABLE "Party" (
+  "id" SERIAL PRIMARY KEY,
+  "ownerId" INTEGER NOT NULL REFERENCES "User"("id") ON DELETE CASCADE ON UPDATE CASCADE,
+  "gameId" INTEGER NOT NULL REFERENCES "Game"("id") ON DELETE RESTRICT ON UPDATE CASCADE,
+  "title" VARCHAR(100) NOT NULL, "description" VARCHAR(1000), "mode" "GameMode" NOT NULL DEFAULT 'CASUAL',
+  "rankMin" TEXT, "rankMax" TEXT, "maxMembers" INTEGER NOT NULL DEFAULT 5, "micRequired" BOOLEAN NOT NULL DEFAULT false,
+  "language" TEXT, "region" TEXT, "bumpedAt" TIMESTAMP(3) NOT NULL DEFAULT CURRENT_TIMESTAMP,
+  "status" "PartyStatus" NOT NULL DEFAULT 'OPEN',
+  "createdAt" TIMESTAMP(3) NOT NULL DEFAULT CURRENT_TIMESTAMP, "updatedAt" TIMESTAMP(3) NOT NULL
+);
+CREATE INDEX ON "Party"("gameId"); CREATE INDEX ON "Party"("status");
+CREATE INDEX ON "Party"("createdAt"); CREATE INDEX ON "Party"("ownerId");
+
+CREATE TABLE "PartyMember" (
+  "id" SERIAL PRIMARY KEY,
+  "partyId" INTEGER NOT NULL REFERENCES "Party"("id") ON DELETE CASCADE ON UPDATE CASCADE,
+  "userId" INTEGER NOT NULL REFERENCES "User"("id") ON DELETE CASCADE ON UPDATE CASCADE,
+  "role" "PartyRole" NOT NULL DEFAULT 'MEMBER', "status" "MemberStatus" NOT NULL DEFAULT 'PENDING',
+  "message" VARCHAR(300), "joinedAt" TIMESTAMP(3) NOT NULL DEFAULT CURRENT_TIMESTAMP,
+  "updatedAt" TIMESTAMP(3) NOT NULL, UNIQUE ("partyId","userId")
+);
+CREATE INDEX ON "PartyMember"("userId"); CREATE INDEX ON "PartyMember"("partyId","status");
+
+CREATE TABLE "Conversation" (
+  "id" SERIAL PRIMARY KEY, "type" "ConversationType" NOT NULL,
+  "partyId" INTEGER UNIQUE REFERENCES "Party"("id") ON DELETE CASCADE ON UPDATE CASCADE,
+  "createdAt" TIMESTAMP(3) NOT NULL DEFAULT CURRENT_TIMESTAMP
+);
+
+CREATE TABLE "ConversationMember" (
+  "conversationId" INTEGER NOT NULL REFERENCES "Conversation"("id") ON DELETE CASCADE ON UPDATE CASCADE,
+  "userId" INTEGER NOT NULL REFERENCES "User"("id") ON DELETE CASCADE ON UPDATE CASCADE,
+  "lastReadAt" TIMESTAMP(3), PRIMARY KEY ("conversationId","userId")
+);
+CREATE INDEX ON "ConversationMember"("userId");
+
+CREATE TABLE "Message" (
+  "id" SERIAL PRIMARY KEY,
+  "conversationId" INTEGER NOT NULL REFERENCES "Conversation"("id") ON DELETE CASCADE ON UPDATE CASCADE,
+  "senderId" INTEGER NOT NULL REFERENCES "User"("id") ON DELETE CASCADE ON UPDATE CASCADE,
+  "content" VARCHAR(2000) NOT NULL, "createdAt" TIMESTAMP(3) NOT NULL DEFAULT CURRENT_TIMESTAMP
+);
+CREATE INDEX ON "Message"("conversationId","createdAt");
+
+CREATE TABLE "Notification" (
+  "id" SERIAL PRIMARY KEY,
+  "userId" INTEGER NOT NULL REFERENCES "User"("id") ON DELETE CASCADE ON UPDATE CASCADE,
+  "type" "NotificationType" NOT NULL, "payload" JSONB NOT NULL, "readAt" TIMESTAMP(3),
+  "createdAt" TIMESTAMP(3) NOT NULL DEFAULT CURRENT_TIMESTAMP
+);
+CREATE INDEX ON "Notification"("userId","readAt");
+
+CREATE TABLE "FriendRequest" (
+  "id" SERIAL PRIMARY KEY,
+  "requesterId" INTEGER NOT NULL REFERENCES "User"("id") ON DELETE CASCADE ON UPDATE CASCADE,
+  "receiverId" INTEGER NOT NULL REFERENCES "User"("id") ON DELETE CASCADE ON UPDATE CASCADE,
+  "status" "FriendRequestStatus" NOT NULL DEFAULT 'PENDING',
+  "createdAt" TIMESTAMP(3) NOT NULL DEFAULT CURRENT_TIMESTAMP, "updatedAt" TIMESTAMP(3) NOT NULL,
+  UNIQUE ("requesterId","receiverId")
+);
+CREATE INDEX ON "FriendRequest"("receiverId","status");
+
+CREATE TABLE "UserBlock" (
+  "blockerId" INTEGER NOT NULL REFERENCES "User"("id") ON DELETE CASCADE ON UPDATE CASCADE,
+  "blockedId" INTEGER NOT NULL REFERENCES "User"("id") ON DELETE CASCADE ON UPDATE CASCADE,
+  "createdAt" TIMESTAMP(3) NOT NULL DEFAULT CURRENT_TIMESTAMP, PRIMARY KEY ("blockerId","blockedId")
+);
+CREATE INDEX ON "UserBlock"("blockedId");
+
+CREATE TABLE "Report" (
+  "id" SERIAL PRIMARY KEY,
+  "reporterId" INTEGER NOT NULL REFERENCES "User"("id") ON DELETE CASCADE ON UPDATE CASCADE,
+  "targetUserId" INTEGER NOT NULL REFERENCES "User"("id") ON DELETE CASCADE ON UPDATE CASCADE,
+  "category" "ReportCategory" NOT NULL DEFAULT 'DISRUPTION', "reason" VARCHAR(1000) NOT NULL,
+  "status" "ReportStatus" NOT NULL DEFAULT 'OPEN', "createdAt" TIMESTAMP(3) NOT NULL DEFAULT CURRENT_TIMESTAMP
+);
+CREATE INDEX ON "Report"("status"); CREATE INDEX ON "Report"("targetUserId");
+
+CREATE TABLE "BanAppeal" (
+  "id" SERIAL PRIMARY KEY,
+  "userId" INTEGER NOT NULL REFERENCES "User"("id") ON DELETE CASCADE ON UPDATE CASCADE,
+  "message" VARCHAR(2000) NOT NULL, "status" "BanAppealStatus" NOT NULL DEFAULT 'OPEN',
+  "adminNote" VARCHAR(1000), "createdAt" TIMESTAMP(3) NOT NULL DEFAULT CURRENT_TIMESTAMP,
+  "reviewedAt" TIMESTAMP(3), "reviewedByDiscordId" TEXT
+);
+CREATE INDEX ON "BanAppeal"("userId","status"); CREATE INDEX ON "BanAppeal"("status","createdAt");

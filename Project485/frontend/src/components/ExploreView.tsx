@@ -1,5 +1,5 @@
 import React, { useEffect, useState } from 'react';
-import { Users, Mic, Plus, ChevronRight, X, Search, Radio, Trophy, Gamepad2 } from 'lucide-react';
+import { Users, Mic, Plus, ChevronRight, X } from 'lucide-react';
 import { useNavigate } from 'react-router-dom';
 import { apiClient } from '../api/client';
 import { socket } from '../api/socket';
