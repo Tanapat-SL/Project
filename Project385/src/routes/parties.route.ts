@@ -15,6 +15,11 @@ const requirePositiveInt = (_req: any, res: any, next: any, value: string) => {
   next();
 };
 router.param('id', requirePositiveInt);
+
+/** ถอนทุก socket ของผู้ใช้ออกจากห้องแชทปาร์ตี้ (ออกเอง / ถูกเตะ) เพื่อไม่ให้ยังรับข้อความอยู่ */
+const removeFromPartyRoom = (req: any, userId: number, partyId: number) => {
+  req.app.get('io')?.in(`user_${userId}`).socketsLeave(`party_${partyId}`);
+};
 router.param('userId', requirePositiveInt);
 
 router.get('/mine', authenticate, async (req, res) => {
@@ -274,8 +279,62 @@ router.patch('/:id/members/:userId', authenticate, async (req, res) => {
     const acceptedCount = await prisma.partyMember.count({ where: { partyId, status: 'ACCEPTED' } });
     await prisma.party.update({ where: { id: partyId }, data: { status: acceptedCount >= party.maxMembers ? 'FULL' : 'OPEN' } });
   }
+  if (status !== 'ACCEPTED') removeFromPartyRoom(req, targetUserId, partyId);
   req.app.get('io')?.emit('party_updated', { partyId });
   res.json(member);
+});
+
+router.post('/:id/leave', authenticate, async (req, res) => {
+  const userId = (req as any).user.userId;
+  const partyId = Number(req.params.id);
+  const party = await prisma.party.findUnique({ where: { id: partyId } });
+  if (!party) return res.status(404).json({ message: 'Party not found' });
+  const membership = await prisma.partyMember.findUnique({ where: { partyId_userId: { partyId, userId } } });
+  if (!membership || membership.status !== 'ACCEPTED') {
+    return res.status(400).json({ message: 'You are not a member of this party' });
+  }
+
+  if (party.ownerId === userId) {
+    // เจ้าของออก → โอนให้สมาชิกที่เข้าร่วมก่อนสุด (ที่ยังไม่มีห้องเปิดของตัวเอง เพื่อไม่ให้ผิดกฎ 1 คน 1 ห้อง)
+    const successor = await prisma.partyMember.findFirst({
+      where: {
+        partyId,
+        status: 'ACCEPTED',
+        userId: { not: userId },
+        user: { partiesOwned: { none: { status: { in: ['OPEN', 'FULL'] } } } },
+      },
+      orderBy: { joinedAt: 'asc' },
+    });
+    if (!successor) {
+      // ไม่มีใครรับช่วงได้ → ปิดห้องทิ้ง
+      await prisma.party.delete({ where: { id: partyId } });
+      removeFromPartyRoom(req, userId, partyId);
+      req.app.get('io')?.emit('party_deleted', { partyId });
+      return res.json({ left: true, partyDeleted: true });
+    }
+    await prisma.$transaction([
+      prisma.party.update({ where: { id: partyId }, data: { ownerId: successor.userId } }),
+      prisma.partyMember.update({ where: { partyId_userId: { partyId, userId: successor.userId } }, data: { role: 'OWNER' } }),
+      prisma.partyMember.update({ where: { partyId_userId: { partyId, userId } }, data: { status: 'LEFT', role: 'MEMBER' } }),
+    ]);
+    await prisma.notification.create({
+      data: { userId: successor.userId, type: 'PARTY_REQUEST_ACCEPTED', payload: { partyId, reason: 'OWNERSHIP_TRANSFERRED' } },
+    });
+  } else {
+    await prisma.partyMember.update({
+      where: { partyId_userId: { partyId, userId } },
+      data: { status: 'LEFT' },
+    });
+  }
+
+  // คำนวณสถานะห้องใหม่ (ไม่แตะห้องที่ปิดเอง) — มีคนออกแล้วห้องที่เต็มต้องกลับมาเปิดรับ
+  if (party.status !== 'CLOSED') {
+    const acceptedCount = await prisma.partyMember.count({ where: { partyId, status: 'ACCEPTED' } });
+    await prisma.party.update({ where: { id: partyId }, data: { status: acceptedCount >= party.maxMembers ? 'FULL' : 'OPEN' } });
+  }
+  removeFromPartyRoom(req, userId, partyId);
+  req.app.get('io')?.emit('party_updated', { partyId });
+  res.json({ left: true, partyDeleted: false });
 });
 
 router.post('/:id/members/:userId/kick', authenticate, async (req, res) => {
@@ -304,6 +363,7 @@ router.post('/:id/members/:userId/kick', authenticate, async (req, res) => {
   await prisma.notification.create({
     data: { userId: targetUserId, type: 'PARTY_REQUEST_REJECTED', payload: { partyId, reason: 'KICKED' } },
   });
+  removeFromPartyRoom(req, targetUserId, partyId);
   req.app.get('io')?.emit('party_updated', { partyId });
   res.json(updatedMember);
 });

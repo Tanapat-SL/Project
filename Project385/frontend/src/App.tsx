@@ -216,8 +216,9 @@ function AppEntry() {
   }, [language]);
 
   useEffect(() => {
-    const params = new URLSearchParams(window.location.search);
-    const tokenFromUrl = params.get('token');
+    // backend ส่ง token กลับมาใน URL fragment (#token=...) — ต้องอ่านที่นี่ เพราะ AppEntry ตัดสินว่าเป็น guest หรือ signed-in ก่อน MainLayout
+    const hashParams = new URLSearchParams(window.location.hash.replace(/^#/, ''));
+    const tokenFromUrl = hashParams.get('token');
     if (tokenFromUrl) {
       localStorage.setItem('mf_token', tokenFromUrl);
       window.history.replaceState({}, document.title, window.location.pathname);

@@ -2,6 +2,7 @@ import React, { useEffect, useState } from 'react';
 import { useParams, useNavigate, Link } from 'react-router-dom';
 import { Users, Mic, ArrowLeft, Send, ArrowUp, UserX } from 'lucide-react';
 import { apiClient } from '../api/client';
+import { socket } from '../api/socket';
 import { getGameArtwork } from '../utils/game-artwork';
 
 export default function PartyDetailView() {
@@ -18,6 +19,7 @@ export default function PartyDetailView() {
   const [editMaxMembers, setEditMaxMembers] = useState(5);
   const [editMicRequired, setEditMicRequired] = useState(false);
   const [kickingId, setKickingId] = useState<number | null>(null);
+  const [leaving, setLeaving] = useState(false);
 
   useEffect(() => {
     if (!id) return;
@@ -33,6 +35,26 @@ export default function PartyDetailView() {
     };
     void loadMembership();
   }, [id]);
+
+  useEffect(() => {
+    if (!id) return;
+    const onPartyUpdated = (payload: { partyId?: number }) => {
+      if (Number(payload?.partyId) !== Number(id)) return;
+      apiClient.get(`/parties/${id}`).then(({ data }) => setPartyData(data)).catch(() => undefined);
+      apiClient.get('/parties/mine')
+        .then(({ data }) => setJoinStatus(current => data.some((party: any) => party.id === Number(id)) ? 'ACCEPTED' : (current === 'PENDING' ? 'PENDING' : 'NONE')))
+        .catch(() => undefined);
+    };
+    const onPartyDeleted = (payload: { partyId?: number }) => {
+      if (Number(payload?.partyId) === Number(id)) navigate('/');
+    };
+    socket.on('party_updated', onPartyUpdated);
+    socket.on('party_deleted', onPartyDeleted);
+    return () => {
+      socket.off('party_updated', onPartyUpdated);
+      socket.off('party_deleted', onPartyDeleted);
+    };
+  }, [id, navigate]);
 
   useEffect(() => {
     if (!partyData || currentUser?.id !== partyData.owner?.id) return;
@@ -106,6 +128,31 @@ export default function PartyDetailView() {
       isOwner: member.role === 'OWNER',
     })) || mockParty.members,
   } : mockParty;
+
+  const leaveParty = async () => {
+    const isOwner = currentUser?.id === partyData?.owner?.id;
+    const message = isOwner
+      ? 'คุณเป็นหัวหน้าห้อง ถ้าออก สิทธิ์หัวหน้าจะถูกโอนให้สมาชิกที่เข้าร่วมก่อนสุด (ถ้าไม่มีใครรับช่วงได้ ห้องจะถูกปิด) ต้องการออกจากปาร์ตี้ใช่ไหม?'
+      : 'ต้องการออกจากปาร์ตี้นี้ใช่ไหม?';
+    if (!window.confirm(message)) return;
+    setLeaving(true);
+    try {
+      const { data } = await apiClient.post(`/parties/${id}/leave`);
+      if (data.partyDeleted) {
+        navigate('/');
+        return;
+      }
+      setJoinStatus('NONE');
+      setJoinRequests([]);
+      const { data: refreshed } = await apiClient.get(`/parties/${id}`);
+      setPartyData(refreshed);
+      setStatus('ออกจากปาร์ตี้แล้ว');
+    } catch (error: any) {
+      setStatus(error.response?.data?.message || 'ออกจากปาร์ตี้ไม่สำเร็จ');
+    } finally {
+      setLeaving(false);
+    }
+  };
 
   const deleteParty = async () => {
     if (!window.confirm('Delete this party permanently?')) return;
@@ -303,6 +350,11 @@ export default function PartyDetailView() {
                   <Send className="w-4 h-4" />
                   {!currentUser ? 'Login to Request' : joinStatus === 'PENDING' ? 'Request Pending' : joinStatus === 'ACCEPTED' ? 'Joined' : 'Send Join Request'}
                 </button>
+                {joinStatus === 'ACCEPTED' && (
+                  <button type="button" onClick={() => void leaveParty()} disabled={leaving} className="mt-3 w-full rounded-lg border border-red-500/40 py-2.5 text-sm font-semibold text-red-300 transition hover:bg-red-500/10 disabled:cursor-wait disabled:opacity-60">
+                    {leaving ? 'กำลังออก...' : 'ออกจากปาร์ตี้'}
+                  </button>
+                )}
                 {status && <p className="text-xs text-gray-300 mt-3">{status}</p>}
                 {currentUser?.id === partyData?.owner?.id && (
                   <div className="mt-4 pt-4 border-t border-gray-700">
