@@ -5,6 +5,10 @@ import { AppError } from '../errors/app-error';
 
 // eslint-disable-next-line @typescript-eslint/no-unused-vars
 export const errorHandler = (err: Error, req: Request, res: Response, _next: NextFunction) => {
+  const bodyError = err as Error & { type?: string };
+  if (bodyError.type === 'entity.parse.failed') return res.status(400).json({ message: 'Invalid JSON body' });
+  if (bodyError.type === 'entity.too.large') return res.status(413).json({ message: 'Request body too large' });
+
   if (err instanceof AppError) {
     return res.status(err.statusCode).json({ message: err.message });
   }

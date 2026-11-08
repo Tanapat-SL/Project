@@ -5,6 +5,18 @@ import { checkContent } from '../services/safety.service';
 
 const router = Router();
 
+const PARTY_STATUSES = ['OPEN', 'FULL', 'CLOSED'];
+const GAME_MODES = ['RANKED', 'CASUAL', 'COOP', 'CUSTOM'];
+const MAX_PARTY_SIZE = 20;
+
+// ตรวจ :id / :userId ให้เป็นจำนวนเต็มบวกก่อนเข้า handler (กัน NaN ส่งเข้า Prisma)
+const requirePositiveInt = (_req: any, res: any, next: any, value: string) => {
+  if (!/^\d+$/.test(value) || Number(value) < 1) return res.status(400).json({ message: 'Invalid ID' });
+  next();
+};
+router.param('id', requirePositiveInt);
+router.param('userId', requirePositiveInt);
+
 router.get('/mine', authenticate, async (req, res) => {
   const userId = (req as any).user.userId;
   const memberships = await prisma.partyMember.findMany({
@@ -24,9 +36,14 @@ router.get('/mine', authenticate, async (req, res) => {
 });
 
 router.get('/', async (req, res) => {
+  const requestedStatus = req.query.status ? String(req.query.status).toUpperCase() : null;
+  if (requestedStatus && !PARTY_STATUSES.includes(requestedStatus)) {
+    return res.status(400).json({ message: 'Invalid status filter' });
+  }
   const parties = await prisma.party.findMany({
+    take: 100,
     where: {
-      status: req.query.status ? String(req.query.status).toUpperCase() as any : { in: ['OPEN', 'FULL'] } as any,
+      status: requestedStatus ? requestedStatus as any : { in: ['OPEN', 'FULL'] } as any,
       game: req.query.game ? { name: String(req.query.game) } : undefined,
       region: req.query.region ? String(req.query.region) : undefined,
       OR: req.query.rank ? [{ rankMin: String(req.query.rank) }, { rankMax: String(req.query.rank) }] as any : undefined,
@@ -44,13 +61,18 @@ router.get('/', async (req, res) => {
 router.post('/', authenticate, async (req, res) => {
   const userId = (req as any).user.userId;
   const { gameId, title, description, mode, rankMin, rankMax, maxMembers, micRequired, language, region } = req.body;
-  const safety = await checkContent(`${String(title || '')}\n${String(description || '')}`);
+  const cleanTitle = String(title || '').trim().slice(0, 100);
+  const cleanDescription = description ? String(description).trim().slice(0, 1000) : null;
+  const partyMode = String(mode || 'CASUAL').toUpperCase();
+  if (!GAME_MODES.includes(partyMode)) return res.status(400).json({ message: 'Invalid game mode' });
+  const safety = await checkContent(`${cleanTitle}\n${cleanDescription || ''}`);
   if (safety.level === 'BLOCK') {
     return res.status(400).json({ code: safety.code, message: 'The party details do not follow our community safety rules.' });
   }
   const parsedGameId = Number(gameId);
-  if (!Number.isInteger(parsedGameId) || parsedGameId < 1 || !title || !Number.isInteger(Number(maxMembers)) || Number(maxMembers) < 2) {
-    return res.status(400).json({ message: 'gameId, title and maxMembers (minimum 2) are required' });
+  const parsedMax = Number(maxMembers);
+  if (!Number.isInteger(parsedGameId) || parsedGameId < 1 || !cleanTitle || !Number.isInteger(parsedMax) || parsedMax < 2 || parsedMax > MAX_PARTY_SIZE) {
+    return res.status(400).json({ message: `gameId, title and maxMembers (2-${MAX_PARTY_SIZE}) are required` });
   }
   const activeParty = await prisma.party.findFirst({
     where: { ownerId: userId, status: { in: ['OPEN', 'FULL'] } },
@@ -76,15 +98,15 @@ router.post('/', authenticate, async (req, res) => {
     data: {
       ownerId: userId,
       gameId: parsedGameId,
-      title: String(title),
-      description: description ? String(description) : null,
-      mode,
+      title: cleanTitle,
+      description: cleanDescription,
+      mode: partyMode as any,
       rankMin: minRank,
       rankMax: maxRank,
-      maxMembers: Number(maxMembers),
+      maxMembers: parsedMax,
       micRequired: Boolean(micRequired),
-      language: language || null,
-      region: region || null,
+      language: language ? String(language).slice(0, 50) : null,
+      region: region ? String(region).slice(0, 50) : null,
     },
   });
   await prisma.partyMember.create({
@@ -105,7 +127,7 @@ router.patch('/:id', authenticate, async (req, res) => {
   const description = req.body.description === undefined ? party.description : String(req.body.description ?? '').trim().slice(0, 1000);
   const maxMembers = req.body.maxMembers === undefined ? party.maxMembers : Number(req.body.maxMembers);
   const micRequired = req.body.micRequired === undefined ? party.micRequired : Boolean(req.body.micRequired);
-  if (!title || !Number.isInteger(maxMembers) || maxMembers < 2 || maxMembers > 20) {
+  if (!title || !Number.isInteger(maxMembers) || maxMembers < 2 || maxMembers > MAX_PARTY_SIZE) {
     return res.status(400).json({ message: 'Invalid party title or member limit' });
   }
   const acceptedMembers = await prisma.partyMember.count({ where: { partyId, status: 'ACCEPTED' } });
@@ -180,10 +202,30 @@ router.post('/:id/join-requests', authenticate, async (req, res) => {
   const partyId = Number(req.params.id);
   const party = await prisma.party.findUnique({ where: { id: partyId } });
   if (!party || party.status !== 'OPEN') return res.status(400).json({ message: 'Party is not open' });
+  if (party.ownerId === userId) return res.status(400).json({ message: 'You own this party' });
+
+  const blocked = await prisma.userBlock.findFirst({
+    where: { OR: [{ blockerId: userId, blockedId: party.ownerId }, { blockerId: party.ownerId, blockedId: userId }] },
+  });
+  if (blocked) return res.status(403).json({ message: 'You cannot join this party' });
+
+  // เดิม upsert จะรีเซ็ตสถานะเป็น PENDING เสมอ → สมาชิกที่ถูกเตะส่งคำขอใหม่ได้ และคำขอซ้ำสร้างแจ้งเตือนซ้ำ
+  const existing = await prisma.partyMember.findUnique({ where: { partyId_userId: { partyId, userId } } });
+  if (existing?.status === 'ACCEPTED') return res.status(409).json({ message: 'You are already in this party' });
+  if (existing?.status === 'KICKED') return res.status(403).json({ message: 'You were removed from this party' });
+  if (existing?.status === 'PENDING') return res.status(200).json(existing);
+
+  const joinMessage = req.body.message ? String(req.body.message).trim().slice(0, 300) : null;
+  if (joinMessage) {
+    const safety = await checkContent(joinMessage);
+    if (safety.level === 'BLOCK') {
+      return res.status(400).json({ code: safety.code, message: 'Your message does not follow our community safety rules.' });
+    }
+  }
   const request = await prisma.partyMember.upsert({
     where: { partyId_userId: { partyId, userId } },
-    update: { status: 'PENDING', message: req.body.message || null },
-    create: { partyId, userId, status: 'PENDING', message: req.body.message || null },
+    update: { status: 'PENDING', message: joinMessage },
+    create: { partyId, userId, status: 'PENDING', message: joinMessage },
   });
   await prisma.notification.create({
     data: { userId: party.ownerId, type: 'PARTY_JOIN_REQUEST', payload: { partyId, requesterId: userId } },
@@ -199,19 +241,39 @@ router.patch('/:id/members/:userId', authenticate, async (req, res) => {
   if (!party || party.ownerId !== ownerId) return res.status(403).json({ message: 'Only the party owner can manage members' });
   const status = String(req.body.status).toUpperCase();
   if (!['ACCEPTED', 'REJECTED', 'LEFT'].includes(status)) return res.status(400).json({ message: 'Invalid status' });
+  if (targetUserId === party.ownerId) return res.status(400).json({ message: 'The party owner status cannot be changed' });
+
+  const current = await prisma.partyMember.findUnique({ where: { partyId_userId: { partyId, userId: targetUserId } } });
+  if (!current) return res.status(404).json({ message: 'Member not found' });
+  if (status === 'ACCEPTED' || status === 'REJECTED') {
+    if (current.status !== 'PENDING') return res.status(400).json({ message: 'Only pending requests can be accepted or rejected' });
+  }
+  if (status === 'ACCEPTED') {
+    const currentCount = await prisma.partyMember.count({ where: { partyId, status: 'ACCEPTED' } });
+    if (currentCount >= party.maxMembers) return res.status(409).json({ message: 'Party is already full' });
+  }
+  if (status === 'LEFT' && current.status !== 'ACCEPTED') {
+    return res.status(400).json({ message: 'Only accepted members can be removed' });
+  }
+
   const member = await prisma.partyMember.update({
     where: { partyId_userId: { partyId, userId: targetUserId } },
     data: { status: status as any },
   });
-  await prisma.notification.create({
-    data: {
-      userId: targetUserId,
-      type: status === 'ACCEPTED' ? 'PARTY_REQUEST_ACCEPTED' : 'PARTY_REQUEST_REJECTED',
-      payload: { partyId },
-    },
-  });
-  const acceptedCount = await prisma.partyMember.count({ where: { partyId, status: 'ACCEPTED' } });
-  if (acceptedCount >= party.maxMembers) await prisma.party.update({ where: { id: partyId }, data: { status: 'FULL' } });
+  if (status !== 'LEFT') {
+    await prisma.notification.create({
+      data: {
+        userId: targetUserId,
+        type: status === 'ACCEPTED' ? 'PARTY_REQUEST_ACCEPTED' : 'PARTY_REQUEST_REJECTED',
+        payload: { partyId },
+      },
+    });
+  }
+  // คำนวณสถานะห้องใหม่ (ไม่แตะห้องที่ปิดเอง) — เดิมไม่เคยเปลี่ยน FULL กลับเป็น OPEN เมื่อมีคนออก
+  if (party.status !== 'CLOSED') {
+    const acceptedCount = await prisma.partyMember.count({ where: { partyId, status: 'ACCEPTED' } });
+    await prisma.party.update({ where: { id: partyId }, data: { status: acceptedCount >= party.maxMembers ? 'FULL' : 'OPEN' } });
+  }
   req.app.get('io')?.emit('party_updated', { partyId });
   res.json(member);
 });

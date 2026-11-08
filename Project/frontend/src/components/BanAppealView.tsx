@@ -1,6 +1,7 @@
 import { FormEvent, useEffect, useState } from 'react';
 import { AlertTriangle, LoaderCircle, Send, ShieldCheck } from 'lucide-react';
 import { apiClient } from '../api/client';
+import { socket } from '../api/socket';
 
 type Appeal = { id: number; message: string; status: 'OPEN' | 'APPROVED' | 'REJECTED'; adminNote?: string | null; createdAt: string };
 type Props = { reason?: string | null; bannedAt?: string | null; onUnbanned: () => void };
@@ -26,6 +27,13 @@ export default function BanAppealView({ reason, bannedAt, onUnbanned }: Props) {
   };
 
   useEffect(() => { void loadAppeals(); }, []);
+
+  // ผู้ดูแลตรวจคำอุทธรณ์แล้ว → อัปเดตสถานะ/หมายเหตุทันที (ถ้าอนุมัติ จะปลดแบนผ่าน loadAppeals → onUnbanned)
+  useEffect(() => {
+    const onReviewed = () => { void loadAppeals(); };
+    socket.on('appeal_reviewed', onReviewed);
+    return () => { socket.off('appeal_reviewed', onReviewed); };
+  }, []);
 
   const submitAppeal = async (event: FormEvent) => {
     event.preventDefault();

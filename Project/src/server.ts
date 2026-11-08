@@ -5,6 +5,7 @@ import { Server } from 'socket.io';
 import jwt from 'jsonwebtoken';
 import { prisma } from './lib/prisma';
 import { isAdminUser } from './middlewares/admin.middleware';
+import { env } from './config/env';
 
 dotenv.config();
 
@@ -14,7 +15,7 @@ const httpServer = createServer(app);
 // Setup Socket.io for Real-time Chat & Party System
 const io = new Server(httpServer, {
   cors: {
-    origin: "*", 
+    origin: env.FRONTEND_URL,
     methods: ["GET", "POST"]
   }
 });
@@ -31,8 +32,10 @@ io.use(async (socket, next) => {
     const payload = jwt.verify(String(token), process.env.JWT_SECRET as string) as { userId: number };
     const userId = Number(payload.userId);
     const user = await prisma.user.findUnique({ where: { id: userId }, select: { isBanned: true } });
-    if (!user || (user.isBanned && !(await isAdminUser(userId)))) return next(new Error('ACCOUNT_BANNED'));
+    if (!user) return next(new Error('UNAUTHORIZED'));
     socket.data.userId = userId;
+    // ผู้ถูกแบนยังเชื่อมต่อได้ (เพื่อรับผลคำอุทธรณ์แบบเรียลไทม์) แต่จะเข้าห้องปาร์ตี้ไม่ได้
+    socket.data.isBanned = user.isBanned && !(await isAdminUser(userId));
     next();
   } catch {
     next(new Error('UNAUTHORIZED'));
@@ -41,6 +44,14 @@ io.use(async (socket, next) => {
 
 io.on('connection', (socket) => {
   console.log('A user connected:', socket.id);
+  // เข้าห้องส่วนตัวฝั่งเซิร์ฟเวอร์เลย (frontend ไม่เคยส่ง join_user_room ทำให้แชทส่วนตัวไม่ realtime)
+  if (socket.data.userId) {
+    socket.join(`user_${socket.data.userId}`);
+    // แอดมินเข้าห้อง 'admins' เพื่อรับรีพอร์ต/คำอุทธรณ์ใหม่แบบเรียลไทม์
+    void isAdminUser(socket.data.userId)
+      .then((isAdmin) => { if (isAdmin) socket.join('admins'); })
+      .catch(() => undefined);
+  }
   const publishOnlineCount = () => io.emit('online_count', io.of('/').sockets.size);
   publishOnlineCount();
 
@@ -57,7 +68,7 @@ io.on('connection', (socket) => {
 
   // Join Party Room
   socket.on('join_party_room', async (partyId) => {
-    if (!socket.data.userId || !Number.isInteger(Number(partyId))) return;
+    if (!socket.data.userId || socket.data.isBanned || !Number.isInteger(Number(partyId))) return;
     const member = await prisma.partyMember.findUnique({ where: { partyId_userId: { partyId: Number(partyId), userId: socket.data.userId } } });
     if (!member || member.status !== 'ACCEPTED') return;
     socket.join(`party_${partyId}`);
@@ -65,13 +76,6 @@ io.on('connection', (socket) => {
   });
 
   // Messages are published only by authenticated REST routes after persistence and safety checks.
-
-  // Party Join Request Notification
-  socket.on('request_join_party', (data) => {
-    // data: { partyOwnerId, partyId, requesterId, requesterName }
-    if (!socket.data.userId || Number(data?.requesterId) !== socket.data.userId) return;
-    io.to(`user_${data.partyOwnerId}`).emit('party_join_request', data);
-  });
 
   socket.on('disconnect', () => {
     console.log('User disconnected:', socket.id);

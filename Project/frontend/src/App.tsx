@@ -29,6 +29,15 @@ function MainLayout() {
     document.documentElement.dataset.theme = localStorage.getItem('mf_theme') || 'dark';
     document.documentElement.dataset.reduceMotion = localStorage.getItem('mf_reduce_motion') || 'false';
     document.documentElement.dataset.density = localStorage.getItem('mf_compact_layout') === 'true' ? 'compact' : 'comfortable';
+    // Auth Check (Discord Login Token) — ต้องเก็บ token ก่อนเชื่อมต่อ socket ไม่เช่นนั้นล็อกอินครั้งแรกจะเชื่อมต่อแบบไม่มี token
+    const hashParams = new URLSearchParams(window.location.hash.replace(/^#/, ''));
+    const tokenFromUrl = hashParams.get('token');
+
+    if (tokenFromUrl) {
+      localStorage.setItem('mf_token', tokenFromUrl);
+      window.history.replaceState({}, document.title, '/'); // ล้าง token ออกจาก URL
+    }
+
     const handleConnect = () => setConnectionState('online');
     const handleDisconnect = () => setConnectionState('connecting');
     const handleConnectionError = () => setConnectionState('offline');
@@ -43,15 +52,6 @@ function MainLayout() {
     socket.on('connect_error', handleConnectionError);
     if (!socket.connected) socket.connect();
     
-    // 2. Auth Check (Discord Login Token)
-    const params = new URLSearchParams(window.location.search);
-    const tokenFromUrl = params.get('token');
-
-    if (tokenFromUrl) {
-      localStorage.setItem('mf_token', tokenFromUrl);
-      window.history.replaceState({}, document.title, "/"); // เธฅเนเธฒเธ URL เนเธซเนเธชเธฐเธญเธฒเธ”
-    }
-
     const savedToken = localStorage.getItem('mf_token');
     if (savedToken) {
       fetchUserData(savedToken);
@@ -99,6 +99,19 @@ function MainLayout() {
       setCurrentUser(null);
     }
   };
+
+  // เรียลไทม์: ถูกแบน / ปลดแบน / ผลคำอุทธรณ์ → โหลดสถานะบัญชีใหม่ทันที
+  useEffect(() => {
+    const onAccountChanged = () => { void refreshCurrentUser(); };
+    socket.on('account_banned', onAccountChanged);
+    socket.on('account_unbanned', onAccountChanged);
+    socket.on('appeal_reviewed', onAccountChanged);
+    return () => {
+      socket.off('account_banned', onAccountChanged);
+      socket.off('account_unbanned', onAccountChanged);
+      socket.off('appeal_reviewed', onAccountChanged);
+    };
+  }, []);
 
   if (currentUser?.isBanned) {
     return <BanAppealView reason={currentUser.banReason} bannedAt={currentUser.bannedAt} onUnbanned={() => void refreshCurrentUser()} />;

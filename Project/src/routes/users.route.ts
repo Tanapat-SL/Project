@@ -67,6 +67,7 @@ router.get('/search', authenticate, async (req, res) => {
         },
       },
     },
+    take: 50,
     select: {
       id: true,
       username: true,

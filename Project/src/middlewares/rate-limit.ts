@@ -16,7 +16,7 @@ export const createRateLimiter = ({ windowMs, max, keyPrefix }: { windowMs: numb
   }, windowMs).unref();
 
   return (req: Request, res: Response, next: NextFunction) => {
-    const key = `${keyPrefix}:${req.user?.id ?? req.ip}`;
+    const key = `${keyPrefix}:${req.ip}`;
     const now = Date.now();
     const bucket = buckets.get(key);
 

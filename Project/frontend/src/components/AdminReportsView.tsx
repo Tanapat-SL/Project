@@ -2,6 +2,7 @@ import { useCallback, useEffect, useState } from 'react';
 import { BadgeCheck, Ban, Check, LoaderCircle, RefreshCw, ShieldAlert, ShieldCheck } from 'lucide-react';
 import { Link } from 'react-router-dom';
 import { apiClient } from '../api/client';
+import { socket } from '../api/socket';
 
 type Report = {
   id: number;
@@ -30,10 +31,12 @@ export default function AdminReportsView() {
   const [appealsLoading, setAppealsLoading] = useState(true);
   const [error, setError] = useState('');
   const [updatingId, setUpdatingId] = useState<number | null>(null);
+  const [refreshing, setRefreshing] = useState(false);
+  const [lastUpdated, setLastUpdated] = useState<Date | null>(null);
 
-  const loadReports = useCallback(async () => {
-    setLoading(true);
-    setError('');
+  // silent = true → รีเฟรชเบื้องหลัง (ไม่ล้างรายการเป็นหน้า loading)
+  const loadReports = useCallback(async (silent = false) => {
+    if (!silent) setLoading(true);
     try {
       const { data } = await apiClient.get<Report[]>('/admin/reports');
       setReports(data);
@@ -46,8 +49,8 @@ export default function AdminReportsView() {
 
   useEffect(() => { void loadReports(); }, [loadReports]);
 
-  const loadAppeals = useCallback(async () => {
-    setAppealsLoading(true);
+  const loadAppeals = useCallback(async (silent = false) => {
+    if (!silent) setAppealsLoading(true);
     try {
       const { data } = await apiClient.get<Appeal[]>('/admin/appeals');
       setAppeals(data);
@@ -59,6 +62,33 @@ export default function AdminReportsView() {
   }, []);
 
   useEffect(() => { void loadAppeals(); }, [loadAppeals]);
+
+  const refreshAll = useCallback(async () => {
+    setRefreshing(true);
+    setError('');
+    await Promise.all([loadReports(true), loadAppeals(true)]);
+    setLastUpdated(new Date());
+    setRefreshing(false);
+  }, [loadReports, loadAppeals]);
+
+  // เรียลไทม์: รีพอร์ต/คำอุทธรณ์ใหม่และการเปลี่ยนสถานะจากแอดมินคนอื่น
+  useEffect(() => {
+    const onReportCreated = (report: Report) => setReports(current => current.some(item => item.id === report.id) ? current : [report, ...current]);
+    const onAppealCreated = (appeal: Appeal) => setAppeals(current => current.some(item => item.id === appeal.id) ? current : [appeal, ...current]);
+    const onAppealUpdated = (appeal: Appeal) => setAppeals(current => current.map(item => item.id === appeal.id ? appeal : item));
+    // เชื่อมต่อใหม่ → โหลดซ้ำเผื่อพลาด event ช่วงที่หลุด
+    const onReconnect = () => { void loadReports(true); void loadAppeals(true); };
+    socket.on('report_created', onReportCreated);
+    socket.on('appeal_created', onAppealCreated);
+    socket.on('appeal_updated', onAppealUpdated);
+    socket.io.on('reconnect', onReconnect);
+    return () => {
+      socket.off('report_created', onReportCreated);
+      socket.off('appeal_created', onAppealCreated);
+      socket.off('appeal_updated', onAppealUpdated);
+      socket.io.off('reconnect', onReconnect);
+    };
+  }, [loadReports, loadAppeals]);
 
   const setStatus = async (reportId: number, status: Report['status']) => {
     setUpdatingId(reportId);
@@ -108,7 +138,10 @@ export default function AdminReportsView() {
           <h1 className="text-3xl font-bold text-white">Log Report</h1>
           <p className="mt-1 text-sm text-gray-400">ตรวจสอบรายงาน จัดการการระงับบัญชี และพิจารณาคำอุทธรณ์</p>
         </div>
-        <button type="button" onClick={() => void loadReports()} className="inline-flex items-center gap-2 rounded-lg border border-gray-700 px-3 py-2 text-sm text-gray-300 hover:border-mf-primary hover:text-white"><RefreshCw className="h-4 w-4" /> Refresh</button>
+        <div className="flex items-center gap-3">
+          {lastUpdated && <span className="text-xs text-gray-500">อัปเดตล่าสุด {lastUpdated.toLocaleTimeString()}</span>}
+          <button type="button" onClick={() => void refreshAll()} disabled={refreshing} className="inline-flex items-center gap-2 rounded-lg border border-gray-700 px-3 py-2 text-sm text-gray-300 hover:border-mf-primary hover:text-white disabled:cursor-wait disabled:opacity-60"><RefreshCw className={`h-4 w-4 ${refreshing ? 'animate-spin' : ''}`} /> Refresh</button>
+        </div>
       </header>
 
       {error && <div role="alert" className="rounded-xl border border-red-500/30 bg-red-500/10 p-4 text-sm text-red-300">{error}</div>}
